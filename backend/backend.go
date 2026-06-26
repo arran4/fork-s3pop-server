@@ -44,8 +44,8 @@ type mailFile struct {
 	filename string
 }
 
-//index management functions
-//index keeps track of ids of all emails ever seen, it is never deleted from
+// index management functions
+// index keeps track of ids of all emails ever seen, it is never deleted from
 func loadIndex(emailDir string) (filesByIndex map[int]*mailFile, filesByName map[string]*mailFile) {
 	filesByIndex = make(map[int]*mailFile)
 	filesByName = make(map[string]*mailFile)

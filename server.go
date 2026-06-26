@@ -1,4 +1,4 @@
-//RFC https://tools.ietf.org/html/rfc1939
+// RFC https://tools.ietf.org/html/rfc1939
 package main
 
 /*
@@ -247,10 +247,10 @@ func handleClient(conn net.Conn, config *ServerConfig) {
 			for fileScanner.Scan() {
 				line := fileScanner.Text()
 				if line == "" && !inBody {
-					fmt.Fprintf(conn, line+eol)
+					fmt.Fprint(conn, line+eol)
 					inBody = true
 				} else if line == "." {
-					fmt.Fprintf(conn, eol+line+eol)
+					fmt.Fprint(conn, eol+line+eol)
 				} else {
 					if inBody {
 						bodyLinesRead++
@@ -258,7 +258,7 @@ func handleClient(conn net.Conn, config *ServerConfig) {
 							break
 						}
 					}
-					fmt.Fprintf(conn, line+eol)
+					fmt.Fprint(conn, line+eol)
 				}
 
 			}
@@ -296,9 +296,9 @@ func handleClient(conn net.Conn, config *ServerConfig) {
 			for fileScanner.Scan() {
 				line := fileScanner.Text()
 				if line == "." {
-					fmt.Fprintf(conn, eol+line+eol)
+					fmt.Fprint(conn, eol+line+eol)
 				} else {
-					fmt.Fprintf(conn, line+eol)
+					fmt.Fprint(conn, line+eol)
 				}
 
 			}
