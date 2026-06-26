@@ -46,7 +46,7 @@ func (m *MailData) Save(emailDir string) {
 	checkError(err)
 	defer metadataFile.Close()
 
-	metadataFile.Write(jsonData)
+	_, _ = metadataFile.Write(jsonData)
 }
 
 func LoadMailData(emailDir string, filename string) (m *MailData) {

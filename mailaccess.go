@@ -32,7 +32,7 @@ import (
 
 func getMessageData(emailDir string) []*mailutils.MailData {
 	var emailMetafiles []string
-	filepath.Walk(emailDir, func(path string, info os.FileInfo, _ error) error {
+	_ = filepath.Walk(emailDir, func(path string, info os.FileInfo, _ error) error {
 		if !info.IsDir() {
 			if filepath.Ext(path) == ".json" {
 				emailMetafiles = append(emailMetafiles, filepath.Base(path))

@@ -37,7 +37,7 @@ import (
 )
 
 const indexFileName = "_email_index.txt"
-const multipartHeader = "Content-Type: multipart"
+
 
 type mailFile struct {
 	index    int
@@ -62,7 +62,7 @@ func loadIndex(emailDir string) (filesByIndex map[int]*mailFile, filesByName map
 	defer indexData.Close()
 
 	var indexScanner = bufio.NewScanner(indexData)
-	var currentIndex int = 0
+	var currentIndex int
 	for indexScanner.Scan() {
 		var thisFile = &mailFile{
 			filename: indexScanner.Text(),
@@ -91,7 +91,7 @@ func appendIndex(name, emailDir string, filesByIndex map[int]*mailFile, filesByN
 	checkError(err)
 	defer indexData.Close()
 
-	indexData.WriteString(name + "\n")
+	_, _ = indexData.WriteString(name + "\n")
 	var newID = getNextID(filesByIndex)
 
 	var thisFile = &mailFile{
@@ -133,17 +133,17 @@ func DownloadEmails(emailBucket, emailFolder string) error {
 	filesByIndex, filesByName := loadIndex(userEmailDir)
 
 	for _, key := range resp.Contents {
-		emailId := path.Base(*key.Key)
-		_, known := filesByName[emailId]
+		emailID := path.Base(*key.Key)
+		_, known := filesByName[emailID]
 		if !known {
-			nextPopId := getNextID(filesByIndex)
-			emailFile := filepath.Join(userEmailDir, emailId)
+			nextPopID := getNextID(filesByIndex)
+			emailFile := filepath.Join(userEmailDir, emailID)
 			err = downloadFile(*key.Key, emailBucket, emailFile, sess)
 			if nil != err {
 				return err
 			}
-			processEmail(userEmailDir, emailId, nextPopId)
-			appendIndex(emailId, userEmailDir, filesByIndex, filesByName)
+			processEmail(userEmailDir, emailID, nextPopID)
+			appendIndex(emailID, userEmailDir, filesByIndex, filesByName)
 		}
 	}
 	return nil

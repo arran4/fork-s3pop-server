@@ -36,9 +36,9 @@ import (
 )
 
 const (
-	STATE_UNAUTHORIZED = 1
-	STATE_TRANSACTION  = 2
-	STATE_UPDATE       = 3
+	stateUnauthorized = 1
+	stateTransaction  = 2
+	stateUpdate       = 3
 )
 
 const eol = "\r\n"
@@ -78,11 +78,10 @@ func loadConfig() (config *ServerConfig) {
 	jsonData, err := ioutil.ReadFile(configFilename)
 	if nil != err {
 		log.Fatal("No server-config.json found")
-	} else {
-		err = json.Unmarshal(jsonData, config)
-		if nil != err {
-			log.Fatal("Config file is not valid JSON")
-		}
+	}
+	err = json.Unmarshal(jsonData, config)
+	if nil != err {
+		log.Fatal("Config file is not valid JSON")
 	}
 	return
 }
@@ -90,7 +89,7 @@ func loadConfig() (config *ServerConfig) {
 func handleClient(conn net.Conn, config *ServerConfig) {
 	defer conn.Close()
 
-	var state = STATE_UNAUTHORIZED
+	var state = stateUnauthorized
 	var emailDir string
 	var emailBucket = config.S3Bucket
 	var deletedItems map[int]struct{}
@@ -101,14 +100,14 @@ func handleClient(conn net.Conn, config *ServerConfig) {
 
 	for {
 		// Reads a line from the client
-		raw_line, err := reader.ReadString('\n')
+		rawLine, err := reader.ReadString('\n')
 		if err != nil {
 			fmt.Println("Error!!" + err.Error())
 			return
 		}
 
 		// Parses the command
-		cmd, args := getCommand(raw_line)
+		cmd, args := getCommand(rawLine)
 
 		fmt.Println("Recieved Command: " + cmd)
 		err = nil
@@ -122,7 +121,7 @@ func handleClient(conn net.Conn, config *ServerConfig) {
 			argNum++
 		}
 		fmt.Println("")
-		if cmd == "USER" && state == STATE_UNAUTHORIZED {
+		if cmd == "USER" && state == stateUnauthorized {
 			//User name is name of folder in bucket in S3
 			userName, err := getSafeArg(args, 0)
 			if nil != err {
@@ -138,63 +137,61 @@ func handleClient(conn net.Conn, config *ServerConfig) {
 			mailData = getMessageData(emailDir)
 			writeOKResponse(conn, "", true)
 
-		} else if cmd == "PASS" && state == STATE_UNAUTHORIZED {
+		} else if cmd == "PASS" && state == stateUnauthorized {
 			//Accept all passwords (local servoce only)
 			writeOKResponse(conn, "User signed in", true)
 			deletedItems = make(map[int]struct{})
-			state = STATE_TRANSACTION
+			state = stateTransaction
 
-		} else if cmd == "STAT" && state == STATE_TRANSACTION {
+		} else if cmd == "STAT" && state == stateTransaction {
 			count, size := getStat(mailData, deletedItems)
 			writeOKResponse(conn, strconv.Itoa(count)+" "+strconv.Itoa(size), true)
 
-		} else if cmd == "LIST" && state == STATE_TRANSACTION {
-			msgId, err := getSafeArg(args, 0)
+		} else if cmd == "LIST" && state == stateTransaction {
+			msgID, err := getSafeArg(args, 0)
 			if err == nil {
 				var id int
-				id, _ = strconv.Atoi(msgId)
+				id, _ = strconv.Atoi(msgID)
 				id--
 				if len(mailData) <= id {
 					writeErrResponse(conn, "no such message", false)
 					continue
-				} else {
-					if _, toDel := deletedItems[id]; toDel {
-						writeErrResponse(conn, "message deleted", false)
-						continue
-					}
-					writeOKResponse(conn, "%d %d", false, id+1, mailData[id].TotalSize)
 				}
+				if _, toDel := deletedItems[id]; toDel {
+					writeErrResponse(conn, "message deleted", false)
+					continue
+				}
+				writeOKResponse(conn, "%d %d", false, id+1, mailData[id].TotalSize)
 			} else {
 				count, size := getStat(mailData, deletedItems)
 				writeOKResponse(conn, "%d messages (%d octets)", false, count, size)
 
-				for itemId, mailItem := range mailData {
-					if _, toDel := deletedItems[itemId]; toDel {
+				for itemID, mailItem := range mailData {
+					if _, toDel := deletedItems[itemID]; toDel {
 						continue
 					}
-					fmt.Fprintf(conn, "%d %d\r\n", itemId+1, mailItem.TotalSize)
+					fmt.Fprintf(conn, "%d %d\r\n", itemID+1, mailItem.TotalSize)
 				}
 				fmt.Fprint(conn, multilineTerminator)
 			}
 
-		} else if cmd == "UIDL" && state == STATE_TRANSACTION {
+		} else if cmd == "UIDL" && state == stateTransaction {
 
-			msgId, err := getSafeArg(args, 0)
+			msgID, err := getSafeArg(args, 0)
 			var id int
 
 			if err == nil {
-				id, _ = strconv.Atoi(msgId)
+				id, _ = strconv.Atoi(msgID)
 				id--
 				if len(mailData) <= id {
 					writeErrResponse(conn, "no such message", false)
 					continue
-				} else {
-					if _, toDel := deletedItems[id]; toDel {
-						writeErrResponse(conn, "message deleted", false)
-						continue
-					}
-					writeOKResponse(conn, "%d %s", false, id+1, mailData[id].Name)
 				}
+				if _, toDel := deletedItems[id]; toDel {
+					writeErrResponse(conn, "message deleted", false)
+					continue
+				}
+				writeOKResponse(conn, "%d %s", false, id+1, mailData[id].Name)
 			} else {
 				writeOKResponse(conn, "", false)
 
@@ -207,12 +204,12 @@ func handleClient(conn net.Conn, config *ServerConfig) {
 				fmt.Fprint(conn, multilineTerminator)
 			}
 
-		} else if cmd == "TOP" && state == STATE_TRANSACTION {
-			msgId, err := getSafeArg(args, 0)
+		} else if cmd == "TOP" && state == stateTransaction {
+			msgID, err := getSafeArg(args, 0)
 			var id int
 
 			if err == nil {
-				id, _ = strconv.Atoi(msgId)
+				id, _ = strconv.Atoi(msgID)
 				id--
 				if len(mailData) <= id {
 					writeErrResponse(conn, "no such message", false)
@@ -265,11 +262,11 @@ func handleClient(conn net.Conn, config *ServerConfig) {
 			fmt.Fprint(conn, multilineTerminator)
 			fileData.Close()
 
-		} else if cmd == "RETR" && state == STATE_TRANSACTION {
-			msgId, err := getSafeArg(args, 0)
+		} else if cmd == "RETR" && state == stateTransaction {
+			msgID, err := getSafeArg(args, 0)
 			var id int
 			if err == nil {
-				id, _ = strconv.Atoi(msgId)
+				id, _ = strconv.Atoi(msgID)
 				id--
 				if len(mailData) <= id {
 					writeErrResponse(conn, "no such message", false)
@@ -305,11 +302,11 @@ func handleClient(conn net.Conn, config *ServerConfig) {
 			fmt.Fprint(conn, multilineTerminator)
 			fileData.Close()
 
-		} else if cmd == "DELE" && state == STATE_TRANSACTION {
-			msgId, err := getSafeArg(args, 0)
+		} else if cmd == "DELE" && state == stateTransaction {
+			msgID, err := getSafeArg(args, 0)
 			var id int
 			if err == nil {
-				id, _ = strconv.Atoi(msgId)
+				id, _ = strconv.Atoi(msgID)
 				id--
 				if len(mailData) <= id {
 					writeErrResponse(conn, "no such message", false)
@@ -331,7 +328,7 @@ func handleClient(conn net.Conn, config *ServerConfig) {
 		} else if cmd == "NOOP" {
 			writeOKResponse(conn, "", false)
 		} else if cmd == "QUIT" {
-			if state == STATE_TRANSACTION {
+			if state == stateTransaction {
 				_ = state
 				deleteItems(emailDir, mailData, deletedItems)
 			}
