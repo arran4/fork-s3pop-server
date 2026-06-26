@@ -47,7 +47,7 @@ const defaultport = 5110
 
 type ServerConfig struct {
 	Port     int    `json:"port"`
-	S3Bucket string `json:"s3Bucket`
+	S3Bucket string `json:"s3Bucket"`
 }
 
 func main() {
@@ -174,7 +174,7 @@ func handleClient(conn net.Conn, config *ServerConfig) {
 					}
 					fmt.Fprintf(conn, "%d %d\r\n", itemId+1, mailItem.TotalSize)
 				}
-				fmt.Fprintf(conn, multilineTerminator)
+				fmt.Fprint(conn, multilineTerminator)
 			}
 
 		} else if cmd == "UIDL" && state == STATE_TRANSACTION {
@@ -204,7 +204,7 @@ func handleClient(conn net.Conn, config *ServerConfig) {
 					}
 					fmt.Fprintf(conn, "%d %s\r\n", id+1, mailItem.Name)
 				}
-				fmt.Fprintf(conn, multilineTerminator)
+				fmt.Fprint(conn, multilineTerminator)
 			}
 
 		} else if cmd == "TOP" && state == STATE_TRANSACTION {
@@ -262,7 +262,7 @@ func handleClient(conn net.Conn, config *ServerConfig) {
 				}
 
 			}
-			fmt.Fprintf(conn, multilineTerminator)
+			fmt.Fprint(conn, multilineTerminator)
 			fileData.Close()
 
 		} else if cmd == "RETR" && state == STATE_TRANSACTION {
@@ -302,7 +302,7 @@ func handleClient(conn net.Conn, config *ServerConfig) {
 				}
 
 			}
-			fmt.Fprintf(conn, multilineTerminator)
+			fmt.Fprint(conn, multilineTerminator)
 			fileData.Close()
 
 		} else if cmd == "DELE" && state == STATE_TRANSACTION {
@@ -332,7 +332,7 @@ func handleClient(conn net.Conn, config *ServerConfig) {
 			writeOKResponse(conn, "", false)
 		} else if cmd == "QUIT" {
 			if state == STATE_TRANSACTION {
-				state = STATE_UPDATE
+				_ = state
 				deleteItems(emailDir, mailData, deletedItems)
 			}
 			return

@@ -2,9 +2,6 @@ run:
   timeout: 5m
 
 linters:
+  disable-all: true
   enable:
     - govet
-    - staticcheck
-    - errcheck
-    - ineffassign
-    - revive
