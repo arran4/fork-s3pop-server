@@ -21,7 +21,7 @@ package mailutils
 
 import (
 	"encoding/json"
-	"io/ioutil"
+
 	"log"
 	"os"
 	"os/user"
@@ -54,7 +54,7 @@ func LoadMailData(emailDir string, filename string) (m *MailData) {
 		filename += ".json"
 	}
 	metadataFilename := filepath.Join(emailDir, filename)
-	jsonData, err := ioutil.ReadFile(metadataFilename)
+	jsonData, err := os.ReadFile(metadataFilename)
 	checkError(err)
 
 	m = &MailData{Read: false}

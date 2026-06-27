@@ -24,7 +24,7 @@ import (
 	"bufio"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
+
 	"log"
 	"net"
 	"os"
@@ -75,7 +75,7 @@ func loadConfig() (config *ServerConfig) {
 	configFilename := "server-config.json"
 	config = new(ServerConfig)
 	config.Port = defaultport
-	jsonData, err := ioutil.ReadFile(configFilename)
+	jsonData, err := os.ReadFile(configFilename)
 	if nil != err {
 		log.Fatal("No server-config.json found")
 	}
