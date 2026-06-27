@@ -49,7 +49,7 @@ type ServerConfig struct {
 	Port             int    `json:"port"`
 	S3Bucket         string `json:"s3Bucket"`
 	S3Endpoint       string `json:"s3Endpoint"`
-	S3ForcePathStyle bool   `json:"s3ForcePathStyle"`
+	S3ForcePathStyle *bool  `json:"s3ForcePathStyle"`
 }
 
 func main() {
