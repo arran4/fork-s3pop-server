@@ -46,8 +46,10 @@ const multilineTerminator = ".\r\n"
 const defaultport = 5110
 
 type ServerConfig struct {
-	Port     int    `json:"port"`
-	S3Bucket string `json:"s3Bucket`
+	Port             int    `json:"port"`
+	S3Bucket         string `json:"s3Bucket"`
+	S3Endpoint       string `json:"s3Endpoint"`
+	S3ForcePathStyle bool   `json:"s3ForcePathStyle"`
 }
 
 func main() {
@@ -130,7 +132,7 @@ func handleClient(conn net.Conn, config *ServerConfig) {
 				continue
 			}
 			emailDir = mailutils.GetEmailDir(userName)
-			err = backend.DownloadEmails(emailBucket, userName)
+			err = backend.DownloadEmails(emailBucket, userName, config.S3Endpoint, config.S3ForcePathStyle)
 			if nil != err {
 				writeErrResponse(conn, "Could not download emails: %s", false, err)
 				continue
@@ -247,10 +249,10 @@ func handleClient(conn net.Conn, config *ServerConfig) {
 			for fileScanner.Scan() {
 				line := fileScanner.Text()
 				if line == "" && !inBody {
-					fmt.Fprintf(conn, line+eol)
+					fmt.Fprintf(conn, "%s", line+eol)
 					inBody = true
 				} else if line == "." {
-					fmt.Fprintf(conn, eol+line+eol)
+					fmt.Fprintf(conn, "%s", eol+line+eol)
 				} else {
 					if inBody {
 						bodyLinesRead++
@@ -258,7 +260,7 @@ func handleClient(conn net.Conn, config *ServerConfig) {
 							break
 						}
 					}
-					fmt.Fprintf(conn, line+eol)
+					fmt.Fprintf(conn, "%s", line+eol)
 				}
 
 			}
@@ -296,9 +298,9 @@ func handleClient(conn net.Conn, config *ServerConfig) {
 			for fileScanner.Scan() {
 				line := fileScanner.Text()
 				if line == "." {
-					fmt.Fprintf(conn, eol+line+eol)
+					fmt.Fprintf(conn, "%s", eol+line+eol)
 				} else {
-					fmt.Fprintf(conn, line+eol)
+					fmt.Fprintf(conn, "%s", line+eol)
 				}
 
 			}
