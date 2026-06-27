@@ -75,14 +75,14 @@ func getSafeArg(args []string, argIndex int) (string, error) {
 }
 
 func writeOKResponse(conn net.Conn, msg string, log bool, args ...interface{}) {
-	fmt.Fprintf(conn, "+OK "+msg+eol, args...)
+	_, _ = fmt.Fprintf(conn, "+OK "+msg+eol, args...)
 	if log {
 		fmt.Printf("+OK "+msg, args...)
 	}
 }
 
 func writeErrResponse(conn net.Conn, msg string, log bool, args ...interface{}) {
-	fmt.Fprintf(conn, "-ERR "+msg+eol, args...)
+	_, _ = fmt.Fprintf(conn, "-ERR "+msg+eol, args...)
 	if log {
 		fmt.Printf("-ERR "+msg, args...)
 	}

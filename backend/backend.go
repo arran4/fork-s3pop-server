@@ -59,7 +59,7 @@ func loadIndex(emailDir string) (filesByIndex map[int]*mailFile, filesByName map
 	var indexData *os.File
 	indexData, err = os.Open(indexFile)
 	checkError(err)
-	defer indexData.Close()
+	defer func() { _ = indexData.Close() }()
 
 	var indexScanner = bufio.NewScanner(indexData)
 	var currentIndex int
@@ -89,7 +89,7 @@ func appendIndex(name, emailDir string, filesByIndex map[int]*mailFile, filesByN
 	}
 
 	checkError(err)
-	defer indexData.Close()
+	defer func() { _ = indexData.Close() }()
 
 	_, _ = indexData.WriteString(name + "\n")
 	var newID = getNextID(filesByIndex)
@@ -168,7 +168,7 @@ func processEmail(emailDir string, filename string, id int) {
 func splitEmail(fullFilePath string) (headers []string, body []string) {
 	fileData, err := os.Open(fullFilePath)
 	checkError(err)
-	defer fileData.Close()
+	defer func() { _ = fileData.Close() }()
 
 	headers = make([]string, 0)
 	body = make([]string, 0)
@@ -207,7 +207,7 @@ func downloadFile(key, bucket string, outputPath string, sess *session.Session) 
 	if nil != err {
 		return err
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	downloader := s3manager.NewDownloader(sess)
 
@@ -218,7 +218,7 @@ func downloadFile(key, bucket string, outputPath string, sess *session.Session) 
 	if nil != err {
 		return err
 	}
-	file.Close()
+	_ = file.Close()
 	fmt.Printf("Download of %s complete.\n", key)
 	fmt.Printf("Downloaded file written to %s.\n", outputPath)
 
