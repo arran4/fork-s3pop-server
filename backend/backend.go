@@ -130,7 +130,7 @@ func WithS3ForcePathStyle(forcePathStyle *bool) S3Option {
 	}
 }
 
-func DownloadEmails(emailBucket, emailFolder string, opts ...any) error {
+func DownloadEmails(emailBucket, emailFolder string, opts ...S3Option) error {
 
 	sess, err := getSession(opts...)
 	if nil != err {
@@ -243,7 +243,7 @@ func downloadFile(key, bucket string, outputPath string, sess *session.Session) 
 	return err
 }
 
-func getSession(opts ...any) (sess *session.Session, err error) {
+func getSession(opts ...S3Option) (sess *session.Session, err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			fmt.Println("Panic creating Session:", r)
@@ -268,9 +268,7 @@ func getSession(opts ...any) (sess *session.Session, err error) {
 
 	awsConfig := &aws.Config{}
 	for _, opt := range opts {
-		if optFn, ok := opt.(S3Option); ok {
-			optFn(awsConfig)
-		}
+		opt(awsConfig)
 	}
 
 	sess, err = session.NewSessionWithOptions(session.Options{
