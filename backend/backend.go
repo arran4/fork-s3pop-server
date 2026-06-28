@@ -20,11 +20,10 @@ package backend
 */
 import (
 	"bufio"
-	"errors"
+	"context"
 	"fmt"
 	"log"
 	"os"
-	"context"
 	"os/user"
 	"path"
 	"path/filepath"
@@ -118,7 +117,7 @@ type (
 	S3ForcePathStyle *bool
 )
 
-func DownloadEmails(emailBucket, emailFolder string, opts ...any) error {
+func DownloadEmails(ctx context.Context, emailBucket, emailFolder string, opts ...any) error {
 
 	client, err := getClient(opts...)
 	if nil != err {
@@ -130,7 +129,7 @@ func DownloadEmails(emailBucket, emailFolder string, opts ...any) error {
 		Prefix: aws.String(emailFolder),
 	}
 
-	resp, err := client.ListObjectsV2(context.TODO(), params)
+	resp, err := client.ListObjectsV2(ctx, params)
 	if nil != err {
 		return err
 	}
@@ -143,7 +142,7 @@ func DownloadEmails(emailBucket, emailFolder string, opts ...any) error {
 		if !known {
 			nextPopID := getNextID(filesByIndex)
 			emailFile := filepath.Join(userEmailDir, emailID)
-			err = downloadFile(*key.Key, emailBucket, emailFile, client)
+			err = downloadFile(ctx, *key.Key, emailBucket, emailFile, client)
 			if nil != err {
 				return err
 			}
@@ -205,7 +204,7 @@ func calcPartSizeBytes(part []string) int {
 	return sum
 }
 
-func downloadFile(key, bucket string, outputPath string, client *s3.Client) error {
+func downloadFile(ctx context.Context, key, bucket string, outputPath string, client *s3.Client) error {
 
 	fmt.Printf("Beginning download of %s.\n", key)
 	file, err := os.Create(outputPath)
@@ -218,7 +217,7 @@ func downloadFile(key, bucket string, outputPath string, client *s3.Client) erro
 	downloader := manager.NewDownloader(client)
 
 	// nolint:staticcheck // Reason: transfermanager doesn't have an exact replacement for Downloader without refactoring
-	_, err = downloader.Download(context.TODO(), file, &s3.GetObjectInput{
+	_, err = downloader.Download(ctx, file, &s3.GetObjectInput{
 		Bucket: aws.String(bucket),
 		Key:    aws.String(key),
 	})
@@ -236,7 +235,7 @@ func getClient(opts ...any) (client *s3.Client, err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			fmt.Println("Panic creating Client:", r)
-			err = errors.New(r.(string))
+			err = fmt.Errorf("panic: %v", r)
 		}
 	}()
 	var userInfo *user.User

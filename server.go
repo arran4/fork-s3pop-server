@@ -22,6 +22,7 @@ package main
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"fmt"
 
@@ -132,6 +133,7 @@ func handleClient(conn net.Conn, config *ServerConfig) {
 			}
 			emailDir = mailutils.GetEmailDir(userName)
 			err = backend.DownloadEmails(
+				context.TODO(),
 				emailBucket,
 				userName,
 				backend.S3Endpoint(config.S3Endpoint),
