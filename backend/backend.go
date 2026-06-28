@@ -28,13 +28,13 @@ import (
 	"path"
 	"path/filepath"
 
-	// nolint:staticcheck
+	// nolint:staticcheck // Reason: aws-sdk-go is used by design in this repository and an upgrade to v2 is out of scope.
 	"github.com/aws/aws-sdk-go/aws"
-	// nolint:staticcheck
+	// nolint:staticcheck // Reason: aws-sdk-go is used by design in this repository and an upgrade to v2 is out of scope.
 	"github.com/aws/aws-sdk-go/aws/session"
-	// nolint:staticcheck
+	// nolint:staticcheck // Reason: aws-sdk-go is used by design in this repository and an upgrade to v2 is out of scope.
 	"github.com/aws/aws-sdk-go/service/s3"
-	// nolint:staticcheck
+	// nolint:staticcheck // Reason: aws-sdk-go is used by design in this repository and an upgrade to v2 is out of scope.
 	"github.com/aws/aws-sdk-go/service/s3/s3manager"
 
 	"github.com/FractalJim/s3pop-server/mailutils"
