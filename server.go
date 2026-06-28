@@ -247,7 +247,7 @@ func handleClient(conn net.Conn, config *ServerConfig) {
 					_, _ = fmt.Fprint(conn, line+eol)
 					inBody = true
 				} else if line == "." {
-					fmt.Fprint(conn, eol+line+eol)
+					_, _ = fmt.Fprint(conn, eol+line+eol)
 				} else {
 					if inBody {
 						bodyLinesRead++
@@ -293,7 +293,7 @@ func handleClient(conn net.Conn, config *ServerConfig) {
 			for fileScanner.Scan() {
 				line := fileScanner.Text()
 				if line == "." {
-					fmt.Fprint(conn, eol+line+eol)
+					_, _ = fmt.Fprint(conn, eol+line+eol)
 				} else {
 					_, _ = fmt.Fprint(conn, line+eol)
 				}
@@ -321,7 +321,7 @@ func handleClient(conn net.Conn, config *ServerConfig) {
 				continue
 			}
 			deletedItems[id] = struct{}{}
-			fmt.Fprintf(conn, "+OK"+eol)
+			_, _ = fmt.Fprintf(conn, "+OK"+eol)
 		} else if cmd == "RSET" {
 			deletedItems = make(map[int]struct{})
 			writeOKResponse(conn, "", false)
