@@ -112,25 +112,19 @@ func getNextID(filesByIndex map[int]*mailFile) int {
 	return res + 1
 }
 
-type S3Option func(*aws.Config)
+type S3OptionType string
 
-func WithS3Endpoint(endpoint string) S3Option {
-	return func(cfg *aws.Config) {
-		if endpoint != "" {
-			cfg.Endpoint = aws.String(endpoint)
-		}
-	}
+const (
+	OptionS3Endpoint       S3OptionType = "S3Endpoint"
+	OptionS3ForcePathStyle S3OptionType = "S3ForcePathStyle"
+)
+
+type S3Option struct {
+	Type  S3OptionType
+	Value any
 }
 
-func WithS3ForcePathStyle(forcePathStyle *bool) S3Option {
-	return func(cfg *aws.Config) {
-		if forcePathStyle != nil {
-			cfg.S3ForcePathStyle = forcePathStyle
-		}
-	}
-}
-
-func DownloadEmails(emailBucket, emailFolder string, opts ...S3Option) error {
+func DownloadEmails(emailBucket, emailFolder string, opts ...any) error {
 
 	sess, err := getSession(opts...)
 	if nil != err {
@@ -243,7 +237,7 @@ func downloadFile(key, bucket string, outputPath string, sess *session.Session) 
 	return err
 }
 
-func getSession(opts ...S3Option) (sess *session.Session, err error) {
+func getSession(opts ...any) (sess *session.Session, err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			fmt.Println("Panic creating Session:", r)
@@ -268,7 +262,18 @@ func getSession(opts ...S3Option) (sess *session.Session, err error) {
 
 	awsConfig := &aws.Config{}
 	for _, opt := range opts {
-		opt(awsConfig)
+		if s3Opt, ok := opt.(S3Option); ok {
+			switch s3Opt.Type {
+			case OptionS3Endpoint:
+				if endpoint, ok := s3Opt.Value.(string); ok && endpoint != "" {
+					awsConfig.Endpoint = aws.String(endpoint)
+				}
+			case OptionS3ForcePathStyle:
+				if forcePathStyle, ok := s3Opt.Value.(*bool); ok && forcePathStyle != nil {
+					awsConfig.S3ForcePathStyle = forcePathStyle
+				}
+			}
+		}
 	}
 
 	sess, err = session.NewSessionWithOptions(session.Options{

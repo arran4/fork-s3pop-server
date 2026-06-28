@@ -132,7 +132,12 @@ func handleClient(conn net.Conn, config *ServerConfig) {
 				continue
 			}
 			emailDir = mailutils.GetEmailDir(userName)
-			err = backend.DownloadEmails(emailBucket, userName, backend.WithS3Endpoint(config.S3Endpoint), backend.WithS3ForcePathStyle(config.S3ForcePathStyle))
+			err = backend.DownloadEmails(
+				emailBucket,
+				userName,
+				backend.S3Option{Type: backend.OptionS3Endpoint, Value: config.S3Endpoint},
+				backend.S3Option{Type: backend.OptionS3ForcePathStyle, Value: config.S3ForcePathStyle},
+			)
 			if nil != err {
 				writeErrResponse(conn, "Could not download emails: %s", false, err)
 				continue
