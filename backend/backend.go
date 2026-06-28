@@ -112,17 +112,10 @@ func getNextID(filesByIndex map[int]*mailFile) int {
 	return res + 1
 }
 
-type S3OptionType string
-
-const (
-	OptionS3Endpoint       S3OptionType = "S3Endpoint"
-	OptionS3ForcePathStyle S3OptionType = "S3ForcePathStyle"
+type (
+	S3Endpoint       string
+	S3ForcePathStyle *bool
 )
-
-type S3Option struct {
-	Type  S3OptionType
-	Value any
-}
 
 func DownloadEmails(emailBucket, emailFolder string, opts ...any) error {
 
@@ -262,16 +255,14 @@ func getSession(opts ...any) (sess *session.Session, err error) {
 
 	awsConfig := &aws.Config{}
 	for _, opt := range opts {
-		if s3Opt, ok := opt.(S3Option); ok {
-			switch s3Opt.Type {
-			case OptionS3Endpoint:
-				if endpoint, ok := s3Opt.Value.(string); ok && endpoint != "" {
-					awsConfig.Endpoint = aws.String(endpoint)
-				}
-			case OptionS3ForcePathStyle:
-				if forcePathStyle, ok := s3Opt.Value.(*bool); ok && forcePathStyle != nil {
-					awsConfig.S3ForcePathStyle = forcePathStyle
-				}
+		switch v := opt.(type) {
+		case S3Endpoint:
+			if v != "" {
+				awsConfig.Endpoint = aws.String(string(v))
+			}
+		case S3ForcePathStyle:
+			if v != nil {
+				awsConfig.S3ForcePathStyle = v
 			}
 		}
 	}
