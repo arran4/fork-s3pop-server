@@ -87,7 +87,7 @@ func loadConfig() (config *ServerConfig) {
 }
 
 func handleClient(conn net.Conn, config *ServerConfig) {
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	var state = stateUnauthorized
 	var emailDir string
@@ -96,7 +96,7 @@ func handleClient(conn net.Conn, config *ServerConfig) {
 	var mailData []*mailutils.MailData
 	reader := bufio.NewReader(conn)
 
-	fmt.Fprintf(conn, "+OK S3 POP3 server: powered by Go"+eol)
+	_, _ = fmt.Fprintf(conn, "+OK S3 POP3 server: powered by Go"+eol)
 
 	for {
 		// Reads a line from the client
@@ -170,9 +170,9 @@ func handleClient(conn net.Conn, config *ServerConfig) {
 					if _, toDel := deletedItems[itemID]; toDel {
 						continue
 					}
-					fmt.Fprintf(conn, "%d %d\r\n", itemID+1, mailItem.TotalSize)
+					_, _ = fmt.Fprintf(conn, "%d %d\r\n", itemID+1, mailItem.TotalSize)
 				}
-				fmt.Fprint(conn, multilineTerminator)
+				_, _ = fmt.Fprint(conn, multilineTerminator)
 			}
 
 		} else if cmd == "UIDL" && state == stateTransaction {
@@ -199,9 +199,9 @@ func handleClient(conn net.Conn, config *ServerConfig) {
 					if _, toDel := deletedItems[id]; toDel {
 						continue
 					}
-					fmt.Fprintf(conn, "%d %s\r\n", id+1, mailItem.Name)
+					_, _ = fmt.Fprintf(conn, "%d %s\r\n", id+1, mailItem.Name)
 				}
-				fmt.Fprint(conn, multilineTerminator)
+				_, _ = fmt.Fprint(conn, multilineTerminator)
 			}
 
 		} else if cmd == "TOP" && state == stateTransaction {
@@ -236,7 +236,7 @@ func handleClient(conn net.Conn, config *ServerConfig) {
 			if err != nil {
 				writeErrResponse(conn, "failed to open email %s", false, mailData[id].Name)
 			}
-			defer fileData.Close()
+			defer func() { _ = fileData.Close() }()
 			writeOKResponse(conn, "%d octets", false, mailData[id].TotalSize)
 			bodyLinesRead := 0
 			inBody := false
@@ -244,7 +244,7 @@ func handleClient(conn net.Conn, config *ServerConfig) {
 			for fileScanner.Scan() {
 				line := fileScanner.Text()
 				if line == "" && !inBody {
-					fmt.Fprint(conn, line+eol)
+					_, _ = fmt.Fprint(conn, line+eol)
 					inBody = true
 				} else if line == "." {
 					fmt.Fprint(conn, eol+line+eol)
@@ -255,12 +255,12 @@ func handleClient(conn net.Conn, config *ServerConfig) {
 							break
 						}
 					}
-					fmt.Fprint(conn, line+eol)
+					_, _ = fmt.Fprint(conn, line+eol)
 				}
 
 			}
-			fmt.Fprint(conn, multilineTerminator)
-			fileData.Close()
+			_, _ = fmt.Fprint(conn, multilineTerminator)
+			_ = fileData.Close()
 
 		} else if cmd == "RETR" && state == stateTransaction {
 			msgID, err := getSafeArg(args, 0)
@@ -286,7 +286,7 @@ func handleClient(conn net.Conn, config *ServerConfig) {
 			if err != nil {
 				writeErrResponse(conn, "failed to open email %s", false, mailData[id].Name)
 			}
-			defer fileData.Close()
+			defer func() { _ = fileData.Close() }()
 			writeOKResponse(conn, "%d octets", false, mailData[id].TotalSize)
 
 			fileScanner := bufio.NewScanner(fileData)
@@ -295,12 +295,12 @@ func handleClient(conn net.Conn, config *ServerConfig) {
 				if line == "." {
 					fmt.Fprint(conn, eol+line+eol)
 				} else {
-					fmt.Fprint(conn, line+eol)
+					_, _ = fmt.Fprint(conn, line+eol)
 				}
 
 			}
-			fmt.Fprint(conn, multilineTerminator)
-			fileData.Close()
+			_, _ = fmt.Fprint(conn, multilineTerminator)
+			_ = fileData.Close()
 
 		} else if cmd == "DELE" && state == stateTransaction {
 			msgID, err := getSafeArg(args, 0)

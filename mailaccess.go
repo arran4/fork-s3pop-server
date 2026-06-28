@@ -71,7 +71,7 @@ func getSafeArg(args []string, argIndex int) (string, error) {
 	if argIndex < len(args) {
 		return args[argIndex], nil
 	}
-	return "", errors.New("Index out of range")
+	return "", errors.New("index out of range")
 }
 
 func writeOKResponse(conn net.Conn, msg string, log bool, args ...interface{}) {
@@ -92,7 +92,7 @@ func deleteItems(emailDir string, mailData []*mailutils.MailData, deletedItems m
 	for id := range deletedItems {
 		filename := filepath.Join(emailDir, mailData[id].Name)
 		err := os.Remove(filename + ".json")
-		os.Remove(filename)
+		_ = os.Remove(filename)
 		if nil == err {
 			removeSucceed++
 		} else {

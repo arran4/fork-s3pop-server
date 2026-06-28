@@ -44,7 +44,7 @@ func (m *MailData) Save(emailDir string) {
 	metadataFilename := filepath.Join(emailDir, m.Name+".json")
 	metadataFile, err := os.Create(metadataFilename)
 	checkError(err)
-	defer metadataFile.Close()
+	defer func() { _ = metadataFile.Close() }()
 
 	_, _ = metadataFile.Write(jsonData)
 }
