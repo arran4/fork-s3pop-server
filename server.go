@@ -254,10 +254,10 @@ func handleClient(conn net.Conn, config *ServerConfig) {
 			for fileScanner.Scan() {
 				line := fileScanner.Text()
 				if line == "" && !inBody {
-					fmt.Fprint(conn, line, eol)
+					_, _ = fmt.Fprint(conn, line+eol)
 					inBody = true
 				} else if line == "." {
-					fmt.Fprint(conn, eol, line, eol)
+					_, _ = fmt.Fprint(conn, eol+line+eol)
 				} else {
 					if inBody {
 						bodyLinesRead++
@@ -265,12 +265,12 @@ func handleClient(conn net.Conn, config *ServerConfig) {
 							break
 						}
 					}
-					fmt.Fprint(conn, line, eol)
+					_, _ = fmt.Fprint(conn, line+eol)
 				}
 
 			}
-			fmt.Fprintf(conn, multilineTerminator)
-			fileData.Close()
+			_, _ = fmt.Fprint(conn, multilineTerminator)
+			_ = fileData.Close()
 
 		} else if cmd == "RETR" && state == STATE_TRANSACTION {
 			msgId, err := getSafeArg(args, 0)
@@ -303,14 +303,14 @@ func handleClient(conn net.Conn, config *ServerConfig) {
 			for fileScanner.Scan() {
 				line := fileScanner.Text()
 				if line == "." {
-					fmt.Fprint(conn, eol, line, eol)
+					_, _ = fmt.Fprint(conn, eol+line+eol)
 				} else {
-					fmt.Fprint(conn, line, eol)
+					_, _ = fmt.Fprint(conn, line+eol)
 				}
 
 			}
-			fmt.Fprintf(conn, multilineTerminator)
-			fileData.Close()
+			_, _ = fmt.Fprint(conn, multilineTerminator)
+			_ = fileData.Close()
 
 		} else if cmd == "DELE" && state == STATE_TRANSACTION {
 			msgId, err := getSafeArg(args, 0)

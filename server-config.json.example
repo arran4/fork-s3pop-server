@@ -1,0 +1,6 @@
+{
+    "port": 5110,
+    "s3Bucket": "your.mail.bucket.com",
+    "s3Endpoint": "https://your-account-id.r2.cloudflarestorage.com",
+    "s3ForcePathStyle": true
+}
