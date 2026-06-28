@@ -42,7 +42,8 @@ At present the instructions assume some familiarity with AWS usage and conigurin
  - Set up a rule set to deliver emals sent to your desired email address to your s3 bucket.
  #### POP3 Server Config
  - Download the zip in releases and unzip into a directory you want to keep it
- - Edit your server-cofig.json (in the root directory of your install), set the bucket name to the name of your bucket. Note the port (or choose your own) for use in configuring your client.  
+ - Edit your server-config.json (in the root directory of your install), set the bucket name to the name of your bucket. Note the port (or choose your own) for use in configuring your client.
+ - If you are using an S3-compatible service like Cloudflare R2, you can also set `s3Endpoint` to your custom endpoint URL and `s3ForcePathStyle` to true if required.
  - Optionally set the program to start when your os starts
 ### Client Configuration
 Your client needs to be able to be setup to use seperate user names and password for both the POP3 connection and the SMTP server, the app has been tested with Thunderbird and the Windows 10 mail client. 

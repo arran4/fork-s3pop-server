@@ -116,9 +116,14 @@ func getNextID(filesByIndex map[int]*mailFile) int {
 	return res + 1
 }
 
-func DownloadEmails(emailBucket, emailFolder string) error {
+type (
+	S3Endpoint       string
+	S3ForcePathStyle *bool
+)
 
-	sess, err := getSession()
+func DownloadEmails(emailBucket, emailFolder string, opts ...any) error {
+
+	sess, err := getSession(opts...)
 	if nil != err {
 		return err
 	}
@@ -229,7 +234,7 @@ func downloadFile(key, bucket string, outputPath string, sess *session.Session) 
 	return err
 }
 
-func getSession() (sess *session.Session, err error) {
+func getSession(opts ...any) (sess *session.Session, err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			fmt.Println("Panic creating Session:", r)
@@ -252,8 +257,23 @@ func getSession() (sess *session.Session, err error) {
 		return nil, err
 	}
 
+	awsConfig := &aws.Config{}
+	for _, opt := range opts {
+		switch v := opt.(type) {
+		case S3Endpoint:
+			if v != "" {
+				awsConfig.Endpoint = aws.String(string(v))
+			}
+		case S3ForcePathStyle:
+			if v != nil {
+				awsConfig.S3ForcePathStyle = v
+			}
+		}
+	}
+
 	sess, err = session.NewSessionWithOptions(session.Options{
 		SharedConfigState: session.SharedConfigEnable,
+		Config:            *awsConfig,
 	})
 	return
 }

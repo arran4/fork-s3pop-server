@@ -46,8 +46,10 @@ const multilineTerminator = ".\r\n"
 const defaultport = 5110
 
 type ServerConfig struct {
-	Port     int    `json:"port"`
-	S3Bucket string `json:"s3Bucket"`
+	Port             int    `json:"port"`
+	S3Bucket         string `json:"s3Bucket"`
+	S3Endpoint       string `json:"s3Endpoint"`
+	S3ForcePathStyle *bool  `json:"s3ForcePathStyle"`
 }
 
 func main() {
@@ -129,7 +131,12 @@ func handleClient(conn net.Conn, config *ServerConfig) {
 				continue
 			}
 			emailDir = mailutils.GetEmailDir(userName)
-			err = backend.DownloadEmails(emailBucket, userName)
+			err = backend.DownloadEmails(
+				emailBucket,
+				userName,
+				backend.S3Endpoint(config.S3Endpoint),
+				backend.S3ForcePathStyle(config.S3ForcePathStyle),
+			)
 			if nil != err {
 				writeErrResponse(conn, "Could not download emails: %s", false, err)
 				continue
