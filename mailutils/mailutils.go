@@ -21,7 +21,7 @@ package mailutils
 
 import (
 	"encoding/json"
-	"io/ioutil"
+
 	"log"
 	"os"
 	"os/user"
@@ -44,9 +44,9 @@ func (m *MailData) Save(emailDir string) {
 	metadataFilename := filepath.Join(emailDir, m.Name+".json")
 	metadataFile, err := os.Create(metadataFilename)
 	checkError(err)
-	defer metadataFile.Close()
+	defer func() { _ = metadataFile.Close() }()
 
-	metadataFile.Write(jsonData)
+	_, _ = metadataFile.Write(jsonData)
 }
 
 func LoadMailData(emailDir string, filename string) (m *MailData) {
@@ -54,7 +54,7 @@ func LoadMailData(emailDir string, filename string) (m *MailData) {
 		filename += ".json"
 	}
 	metadataFilename := filepath.Join(emailDir, filename)
-	jsonData, err := ioutil.ReadFile(metadataFilename)
+	jsonData, err := os.ReadFile(metadataFilename)
 	checkError(err)
 
 	m = &MailData{Read: false}

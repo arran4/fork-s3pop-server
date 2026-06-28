@@ -28,24 +28,28 @@ import (
 	"path"
 	"path/filepath"
 
+	// nolint:staticcheck // Reason: aws-sdk-go is used by design in this repository and an upgrade to v2 is out of scope.
 	"github.com/aws/aws-sdk-go/aws"
+	// nolint:staticcheck // Reason: aws-sdk-go is used by design in this repository and an upgrade to v2 is out of scope.
 	"github.com/aws/aws-sdk-go/aws/session"
+	// nolint:staticcheck // Reason: aws-sdk-go is used by design in this repository and an upgrade to v2 is out of scope.
 	"github.com/aws/aws-sdk-go/service/s3"
+	// nolint:staticcheck // Reason: aws-sdk-go is used by design in this repository and an upgrade to v2 is out of scope.
 	"github.com/aws/aws-sdk-go/service/s3/s3manager"
 
 	"github.com/FractalJim/s3pop-server/mailutils"
 )
 
 const indexFileName = "_email_index.txt"
-const multipartHeader = "Content-Type: multipart"
+
 
 type mailFile struct {
 	index    int
 	filename string
 }
 
-//index management functions
-//index keeps track of ids of all emails ever seen, it is never deleted from
+// index management functions
+// index keeps track of ids of all emails ever seen, it is never deleted from
 func loadIndex(emailDir string) (filesByIndex map[int]*mailFile, filesByName map[string]*mailFile) {
 	filesByIndex = make(map[int]*mailFile)
 	filesByName = make(map[string]*mailFile)
@@ -59,10 +63,10 @@ func loadIndex(emailDir string) (filesByIndex map[int]*mailFile, filesByName map
 	var indexData *os.File
 	indexData, err = os.Open(indexFile)
 	checkError(err)
-	defer indexData.Close()
+	defer func() { _ = indexData.Close() }()
 
 	var indexScanner = bufio.NewScanner(indexData)
-	var currentIndex int = 0
+	var currentIndex int
 	for indexScanner.Scan() {
 		var thisFile = &mailFile{
 			filename: indexScanner.Text(),
@@ -89,9 +93,9 @@ func appendIndex(name, emailDir string, filesByIndex map[int]*mailFile, filesByN
 	}
 
 	checkError(err)
-	defer indexData.Close()
+	defer func() { _ = indexData.Close() }()
 
-	indexData.WriteString(name + "\n")
+	_, _ = indexData.WriteString(name + "\n")
 	var newID = getNextID(filesByIndex)
 
 	var thisFile = &mailFile{
@@ -133,17 +137,17 @@ func DownloadEmails(emailBucket, emailFolder string) error {
 	filesByIndex, filesByName := loadIndex(userEmailDir)
 
 	for _, key := range resp.Contents {
-		emailId := path.Base(*key.Key)
-		_, known := filesByName[emailId]
+		emailID := path.Base(*key.Key)
+		_, known := filesByName[emailID]
 		if !known {
-			nextPopId := getNextID(filesByIndex)
-			emailFile := filepath.Join(userEmailDir, emailId)
+			nextPopID := getNextID(filesByIndex)
+			emailFile := filepath.Join(userEmailDir, emailID)
 			err = downloadFile(*key.Key, emailBucket, emailFile, sess)
 			if nil != err {
 				return err
 			}
-			processEmail(userEmailDir, emailId, nextPopId)
-			appendIndex(emailId, userEmailDir, filesByIndex, filesByName)
+			processEmail(userEmailDir, emailID, nextPopID)
+			appendIndex(emailID, userEmailDir, filesByIndex, filesByName)
 		}
 	}
 	return nil
@@ -168,7 +172,7 @@ func processEmail(emailDir string, filename string, id int) {
 func splitEmail(fullFilePath string) (headers []string, body []string) {
 	fileData, err := os.Open(fullFilePath)
 	checkError(err)
-	defer fileData.Close()
+	defer func() { _ = fileData.Close() }()
 
 	headers = make([]string, 0)
 	body = make([]string, 0)
@@ -207,7 +211,7 @@ func downloadFile(key, bucket string, outputPath string, sess *session.Session) 
 	if nil != err {
 		return err
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	downloader := s3manager.NewDownloader(sess)
 
@@ -218,7 +222,7 @@ func downloadFile(key, bucket string, outputPath string, sess *session.Session) 
 	if nil != err {
 		return err
 	}
-	file.Close()
+	_ = file.Close()
 	fmt.Printf("Download of %s complete.\n", key)
 	fmt.Printf("Downloaded file written to %s.\n", outputPath)
 
