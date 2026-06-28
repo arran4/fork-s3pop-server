@@ -1,0 +1,21 @@
+project_name: s3pop-server
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: app
+    binary: s3pop-server
+    main: .
+    env:
+      - CGO_ENABLED=0
+
+archives:
+  - formats: [tar.gz]
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+
+checksum:
+  name_template: checksums.txt

@@ -32,7 +32,7 @@ import (
 
 func getMessageData(emailDir string) []*mailutils.MailData {
 	var emailMetafiles []string
-	filepath.Walk(emailDir, func(path string, info os.FileInfo, _ error) error {
+	_ = filepath.Walk(emailDir, func(path string, info os.FileInfo, _ error) error {
 		if !info.IsDir() {
 			if filepath.Ext(path) == ".json" {
 				emailMetafiles = append(emailMetafiles, filepath.Base(path))
@@ -71,18 +71,18 @@ func getSafeArg(args []string, argIndex int) (string, error) {
 	if argIndex < len(args) {
 		return args[argIndex], nil
 	}
-	return "", errors.New("Index out of range")
+	return "", errors.New("index out of range")
 }
 
 func writeOKResponse(conn net.Conn, msg string, log bool, args ...interface{}) {
-	fmt.Fprintf(conn, "+OK "+msg+eol, args...)
+	_, _ = fmt.Fprintf(conn, "+OK "+msg+eol, args...)
 	if log {
 		fmt.Printf("+OK "+msg, args...)
 	}
 }
 
 func writeErrResponse(conn net.Conn, msg string, log bool, args ...interface{}) {
-	fmt.Fprintf(conn, "-ERR "+msg+eol, args...)
+	_, _ = fmt.Fprintf(conn, "-ERR "+msg+eol, args...)
 	if log {
 		fmt.Printf("-ERR "+msg, args...)
 	}
@@ -92,7 +92,7 @@ func deleteItems(emailDir string, mailData []*mailutils.MailData, deletedItems m
 	for id := range deletedItems {
 		filename := filepath.Join(emailDir, mailData[id].Name)
 		err := os.Remove(filename + ".json")
-		os.Remove(filename)
+		_ = os.Remove(filename)
 		if nil == err {
 			removeSucceed++
 		} else {

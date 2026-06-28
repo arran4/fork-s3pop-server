@@ -1,4 +1,4 @@
-//RFC https://tools.ietf.org/html/rfc1939
+// RFC https://tools.ietf.org/html/rfc1939
 package main
 
 /*
@@ -24,7 +24,7 @@ import (
 	"bufio"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
+
 	"log"
 	"net"
 	"os"
@@ -36,9 +36,9 @@ import (
 )
 
 const (
-	STATE_UNAUTHORIZED = 1
-	STATE_TRANSACTION  = 2
-	STATE_UPDATE       = 3
+	stateUnauthorized = 1
+	stateTransaction  = 2
+	stateUpdate       = 3
 )
 
 const eol = "\r\n"
@@ -77,40 +77,39 @@ func loadConfig() (config *ServerConfig) {
 	configFilename := "server-config.json"
 	config = new(ServerConfig)
 	config.Port = defaultport
-	jsonData, err := ioutil.ReadFile(configFilename)
+	jsonData, err := os.ReadFile(configFilename)
 	if nil != err {
 		log.Fatal("No server-config.json found")
-	} else {
-		err = json.Unmarshal(jsonData, config)
-		if nil != err {
-			log.Fatal("Config file is not valid JSON")
-		}
+	}
+	err = json.Unmarshal(jsonData, config)
+	if nil != err {
+		log.Fatal("Config file is not valid JSON")
 	}
 	return
 }
 
 func handleClient(conn net.Conn, config *ServerConfig) {
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
-	var state = STATE_UNAUTHORIZED
+	var state = stateUnauthorized
 	var emailDir string
 	var emailBucket = config.S3Bucket
 	var deletedItems map[int]struct{}
 	var mailData []*mailutils.MailData
 	reader := bufio.NewReader(conn)
 
-	fmt.Fprintf(conn, "+OK S3 POP3 server: powered by Go"+eol)
+	_, _ = fmt.Fprintf(conn, "+OK S3 POP3 server: powered by Go"+eol)
 
 	for {
 		// Reads a line from the client
-		raw_line, err := reader.ReadString('\n')
+		rawLine, err := reader.ReadString('\n')
 		if err != nil {
 			fmt.Println("Error!!" + err.Error())
 			return
 		}
 
 		// Parses the command
-		cmd, args := getCommand(raw_line)
+		cmd, args := getCommand(rawLine)
 
 		fmt.Println("Recieved Command: " + cmd)
 		err = nil
@@ -124,7 +123,7 @@ func handleClient(conn net.Conn, config *ServerConfig) {
 			argNum++
 		}
 		fmt.Println("")
-		if cmd == "USER" && state == STATE_UNAUTHORIZED {
+		if cmd == "USER" && state == stateUnauthorized {
 			//User name is name of folder in bucket in S3
 			userName, err := getSafeArg(args, 0)
 			if nil != err {
@@ -145,63 +144,61 @@ func handleClient(conn net.Conn, config *ServerConfig) {
 			mailData = getMessageData(emailDir)
 			writeOKResponse(conn, "", true)
 
-		} else if cmd == "PASS" && state == STATE_UNAUTHORIZED {
+		} else if cmd == "PASS" && state == stateUnauthorized {
 			//Accept all passwords (local servoce only)
 			writeOKResponse(conn, "User signed in", true)
 			deletedItems = make(map[int]struct{})
-			state = STATE_TRANSACTION
+			state = stateTransaction
 
-		} else if cmd == "STAT" && state == STATE_TRANSACTION {
+		} else if cmd == "STAT" && state == stateTransaction {
 			count, size := getStat(mailData, deletedItems)
 			writeOKResponse(conn, strconv.Itoa(count)+" "+strconv.Itoa(size), true)
 
-		} else if cmd == "LIST" && state == STATE_TRANSACTION {
-			msgId, err := getSafeArg(args, 0)
+		} else if cmd == "LIST" && state == stateTransaction {
+			msgID, err := getSafeArg(args, 0)
 			if err == nil {
 				var id int
-				id, _ = strconv.Atoi(msgId)
+				id, _ = strconv.Atoi(msgID)
 				id--
 				if len(mailData) <= id {
 					writeErrResponse(conn, "no such message", false)
 					continue
-				} else {
-					if _, toDel := deletedItems[id]; toDel {
-						writeErrResponse(conn, "message deleted", false)
-						continue
-					}
-					writeOKResponse(conn, "%d %d", false, id+1, mailData[id].TotalSize)
 				}
+				if _, toDel := deletedItems[id]; toDel {
+					writeErrResponse(conn, "message deleted", false)
+					continue
+				}
+				writeOKResponse(conn, "%d %d", false, id+1, mailData[id].TotalSize)
 			} else {
 				count, size := getStat(mailData, deletedItems)
 				writeOKResponse(conn, "%d messages (%d octets)", false, count, size)
 
-				for itemId, mailItem := range mailData {
-					if _, toDel := deletedItems[itemId]; toDel {
+				for itemID, mailItem := range mailData {
+					if _, toDel := deletedItems[itemID]; toDel {
 						continue
 					}
-					fmt.Fprintf(conn, "%d %d\r\n", itemId+1, mailItem.TotalSize)
+					_, _ = fmt.Fprintf(conn, "%d %d\r\n", itemID+1, mailItem.TotalSize)
 				}
-				fmt.Fprintf(conn, multilineTerminator)
+				_, _ = fmt.Fprint(conn, multilineTerminator)
 			}
 
-		} else if cmd == "UIDL" && state == STATE_TRANSACTION {
+		} else if cmd == "UIDL" && state == stateTransaction {
 
-			msgId, err := getSafeArg(args, 0)
+			msgID, err := getSafeArg(args, 0)
 			var id int
 
 			if err == nil {
-				id, _ = strconv.Atoi(msgId)
+				id, _ = strconv.Atoi(msgID)
 				id--
 				if len(mailData) <= id {
 					writeErrResponse(conn, "no such message", false)
 					continue
-				} else {
-					if _, toDel := deletedItems[id]; toDel {
-						writeErrResponse(conn, "message deleted", false)
-						continue
-					}
-					writeOKResponse(conn, "%d %s", false, id+1, mailData[id].Name)
 				}
+				if _, toDel := deletedItems[id]; toDel {
+					writeErrResponse(conn, "message deleted", false)
+					continue
+				}
+				writeOKResponse(conn, "%d %s", false, id+1, mailData[id].Name)
 			} else {
 				writeOKResponse(conn, "", false)
 
@@ -209,17 +206,17 @@ func handleClient(conn net.Conn, config *ServerConfig) {
 					if _, toDel := deletedItems[id]; toDel {
 						continue
 					}
-					fmt.Fprintf(conn, "%d %s\r\n", id+1, mailItem.Name)
+					_, _ = fmt.Fprintf(conn, "%d %s\r\n", id+1, mailItem.Name)
 				}
-				fmt.Fprintf(conn, multilineTerminator)
+				_, _ = fmt.Fprint(conn, multilineTerminator)
 			}
 
-		} else if cmd == "TOP" && state == STATE_TRANSACTION {
-			msgId, err := getSafeArg(args, 0)
+		} else if cmd == "TOP" && state == stateTransaction {
+			msgID, err := getSafeArg(args, 0)
 			var id int
 
 			if err == nil {
-				id, _ = strconv.Atoi(msgId)
+				id, _ = strconv.Atoi(msgID)
 				id--
 				if len(mailData) <= id {
 					writeErrResponse(conn, "no such message", false)
@@ -246,7 +243,7 @@ func handleClient(conn net.Conn, config *ServerConfig) {
 			if err != nil {
 				writeErrResponse(conn, "failed to open email %s", false, mailData[id].Name)
 			}
-			defer fileData.Close()
+			defer func() { _ = fileData.Close() }()
 			writeOKResponse(conn, "%d octets", false, mailData[id].TotalSize)
 			bodyLinesRead := 0
 			inBody := false
@@ -272,11 +269,11 @@ func handleClient(conn net.Conn, config *ServerConfig) {
 			_, _ = fmt.Fprint(conn, multilineTerminator)
 			_ = fileData.Close()
 
-		} else if cmd == "RETR" && state == STATE_TRANSACTION {
-			msgId, err := getSafeArg(args, 0)
+		} else if cmd == "RETR" && state == stateTransaction {
+			msgID, err := getSafeArg(args, 0)
 			var id int
 			if err == nil {
-				id, _ = strconv.Atoi(msgId)
+				id, _ = strconv.Atoi(msgID)
 				id--
 				if len(mailData) <= id {
 					writeErrResponse(conn, "no such message", false)
@@ -296,7 +293,7 @@ func handleClient(conn net.Conn, config *ServerConfig) {
 			if err != nil {
 				writeErrResponse(conn, "failed to open email %s", false, mailData[id].Name)
 			}
-			defer fileData.Close()
+			defer func() { _ = fileData.Close() }()
 			writeOKResponse(conn, "%d octets", false, mailData[id].TotalSize)
 
 			fileScanner := bufio.NewScanner(fileData)
@@ -312,11 +309,11 @@ func handleClient(conn net.Conn, config *ServerConfig) {
 			_, _ = fmt.Fprint(conn, multilineTerminator)
 			_ = fileData.Close()
 
-		} else if cmd == "DELE" && state == STATE_TRANSACTION {
-			msgId, err := getSafeArg(args, 0)
+		} else if cmd == "DELE" && state == stateTransaction {
+			msgID, err := getSafeArg(args, 0)
 			var id int
 			if err == nil {
-				id, _ = strconv.Atoi(msgId)
+				id, _ = strconv.Atoi(msgID)
 				id--
 				if len(mailData) <= id {
 					writeErrResponse(conn, "no such message", false)
@@ -331,15 +328,15 @@ func handleClient(conn net.Conn, config *ServerConfig) {
 				continue
 			}
 			deletedItems[id] = struct{}{}
-			fmt.Fprintf(conn, "+OK"+eol)
+			_, _ = fmt.Fprintf(conn, "+OK"+eol)
 		} else if cmd == "RSET" {
 			deletedItems = make(map[int]struct{})
 			writeOKResponse(conn, "", false)
 		} else if cmd == "NOOP" {
 			writeOKResponse(conn, "", false)
 		} else if cmd == "QUIT" {
-			if state == STATE_TRANSACTION {
-				state = STATE_UPDATE
+			if state == stateTransaction {
+				_ = state
 				deleteItems(emailDir, mailData, deletedItems)
 			}
 			return
