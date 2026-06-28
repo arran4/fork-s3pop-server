@@ -214,8 +214,10 @@ func downloadFile(key, bucket string, outputPath string, client *s3.Client) erro
 	}
 	defer func() { _ = file.Close() }()
 
+	// nolint:staticcheck // Reason: transfermanager doesn't have an exact replacement for Downloader without refactoring
 	downloader := manager.NewDownloader(client)
 
+	// nolint:staticcheck // Reason: transfermanager doesn't have an exact replacement for Downloader without refactoring
 	_, err = downloader.Download(context.TODO(), file, &s3.GetObjectInput{
 		Bucket: aws.String(bucket),
 		Key:    aws.String(key),
