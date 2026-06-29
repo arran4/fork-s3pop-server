@@ -20,7 +20,7 @@ package backend
 */
 import (
 	"bufio"
-	"errors"
+	"context"
 	"fmt"
 	"log"
 	"os"
@@ -28,14 +28,10 @@ import (
 	"path"
 	"path/filepath"
 
-	// nolint:staticcheck // Reason: aws-sdk-go is used by design in this repository and an upgrade to v2 is out of scope.
-	"github.com/aws/aws-sdk-go/aws"
-	// nolint:staticcheck // Reason: aws-sdk-go is used by design in this repository and an upgrade to v2 is out of scope.
-	"github.com/aws/aws-sdk-go/aws/session"
-	// nolint:staticcheck // Reason: aws-sdk-go is used by design in this repository and an upgrade to v2 is out of scope.
-	"github.com/aws/aws-sdk-go/service/s3"
-	// nolint:staticcheck // Reason: aws-sdk-go is used by design in this repository and an upgrade to v2 is out of scope.
-	"github.com/aws/aws-sdk-go/service/s3/s3manager"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/feature/s3/manager"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
 
 	"github.com/FractalJim/s3pop-server/mailutils"
 )
@@ -121,20 +117,19 @@ type (
 	S3ForcePathStyle *bool
 )
 
-func DownloadEmails(emailBucket, emailFolder string, opts ...any) error {
+func DownloadEmails(ctx context.Context, emailBucket, emailFolder string, opts ...any) error {
 
-	sess, err := getSession(opts...)
+	client, err := getClient(opts...)
 	if nil != err {
 		return err
 	}
-	svc := s3.New(sess)
 
-	params := &s3.ListObjectsInput{
+	params := &s3.ListObjectsV2Input{
 		Bucket: aws.String(emailBucket),
 		Prefix: aws.String(emailFolder),
 	}
 
-	resp, err := svc.ListObjects(params)
+	resp, err := client.ListObjectsV2(ctx, params)
 	if nil != err {
 		return err
 	}
@@ -147,7 +142,7 @@ func DownloadEmails(emailBucket, emailFolder string, opts ...any) error {
 		if !known {
 			nextPopID := getNextID(filesByIndex)
 			emailFile := filepath.Join(userEmailDir, emailID)
-			err = downloadFile(*key.Key, emailBucket, emailFile, sess)
+			err = downloadFile(ctx, *key.Key, emailBucket, emailFile, client)
 			if nil != err {
 				return err
 			}
@@ -209,7 +204,7 @@ func calcPartSizeBytes(part []string) int {
 	return sum
 }
 
-func downloadFile(key, bucket string, outputPath string, sess *session.Session) error {
+func downloadFile(ctx context.Context, key, bucket string, outputPath string, client *s3.Client) error {
 
 	fmt.Printf("Beginning download of %s.\n", key)
 	file, err := os.Create(outputPath)
@@ -218,9 +213,11 @@ func downloadFile(key, bucket string, outputPath string, sess *session.Session) 
 	}
 	defer func() { _ = file.Close() }()
 
-	downloader := s3manager.NewDownloader(sess)
+	// nolint:staticcheck // Reason: transfermanager doesn't have an exact replacement for Downloader without refactoring
+	downloader := manager.NewDownloader(client)
 
-	_, err = downloader.Download(file, &s3.GetObjectInput{
+	// nolint:staticcheck // Reason: transfermanager doesn't have an exact replacement for Downloader without refactoring
+	_, err = downloader.Download(ctx, file, &s3.GetObjectInput{
 		Bucket: aws.String(bucket),
 		Key:    aws.String(key),
 	})
@@ -234,11 +231,11 @@ func downloadFile(key, bucket string, outputPath string, sess *session.Session) 
 	return err
 }
 
-func getSession(opts ...any) (sess *session.Session, err error) {
+func getClient(opts ...any) (client *s3.Client, err error) {
 	defer func() {
 		if r := recover(); r != nil {
-			fmt.Println("Panic creating Session:", r)
-			err = errors.New(r.(string))
+			fmt.Println("Panic creating Client:", r)
+			err = fmt.Errorf("panic: %v", r)
 		}
 	}()
 	var userInfo *user.User
@@ -252,29 +249,37 @@ func getSession(opts ...any) (sess *session.Session, err error) {
 		return nil, err
 	}
 
-	_, err = os.Stat(filepath.Join(userInfo.HomeDir, ".aws", "config"))
-	if nil != err {
+	cfg, err := config.LoadDefaultConfig(context.TODO())
+	if err != nil {
 		return nil, err
 	}
 
-	awsConfig := &aws.Config{}
+	var customEndpoint *string
+	var forcePathStyle *bool
+
 	for _, opt := range opts {
 		switch v := opt.(type) {
 		case S3Endpoint:
 			if v != "" {
-				awsConfig.Endpoint = aws.String(string(v))
+				s := string(v)
+				customEndpoint = &s
 			}
 		case S3ForcePathStyle:
 			if v != nil {
-				awsConfig.S3ForcePathStyle = v
+				forcePathStyle = v
 			}
 		}
 	}
 
-	sess, err = session.NewSessionWithOptions(session.Options{
-		SharedConfigState: session.SharedConfigEnable,
-		Config:            *awsConfig,
+	client = s3.NewFromConfig(cfg, func(o *s3.Options) {
+		if customEndpoint != nil {
+			o.BaseEndpoint = customEndpoint
+		}
+		if forcePathStyle != nil {
+			o.UsePathStyle = *forcePathStyle
+		}
 	})
+
 	return
 }
 
