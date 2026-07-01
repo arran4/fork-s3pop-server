@@ -17,7 +17,8 @@ func TestConfigUnmarshal(t *testing.T) {
 		t.Errorf("Expected S3Endpoint to be 'http://localhost:9000', got '%v'", config.S3Endpoint)
 	}
 
-	if config.S3ForcePathStyle == nil || *config.S3ForcePathStyle != true {
+	forcePathStyle := (*bool)(config.S3ForcePathStyle)
+	if forcePathStyle == nil || *forcePathStyle != true {
 		t.Errorf("Expected S3ForcePathStyle to be true, got %v", config.S3ForcePathStyle)
 	}
 }
