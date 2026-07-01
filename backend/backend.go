@@ -30,7 +30,7 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
-	"github.com/aws/aws-sdk-go-v2/feature/s3/manager"
+	"github.com/aws/aws-sdk-go-v2/feature/s3/transfermanager"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 
 	"github.com/FractalJim/s3pop-server/mailutils"
@@ -213,13 +213,12 @@ func downloadFile(ctx context.Context, key, bucket string, outputPath string, cl
 	}
 	defer func() { _ = file.Close() }()
 
-	// nolint:staticcheck // Reason: transfermanager doesn't have an exact replacement for Downloader without refactoring
-	downloader := manager.NewDownloader(client)
+	downloader := transfermanager.New(client)
 
-	// nolint:staticcheck // Reason: transfermanager doesn't have an exact replacement for Downloader without refactoring
-	_, err = downloader.Download(ctx, file, &s3.GetObjectInput{
-		Bucket: aws.String(bucket),
-		Key:    aws.String(key),
+	_, err = downloader.DownloadObject(ctx, &transfermanager.DownloadObjectInput{
+		Bucket:   aws.String(bucket),
+		Key:      aws.String(key),
+		WriterAt: file,
 	})
 	if nil != err {
 		return err
