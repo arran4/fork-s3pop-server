@@ -1,0 +1,63 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'S3 POP3 Server AWS resources for email receiving via SES'
+
+Parameters:
+  BucketName:
+    Type: String
+    Description: Name of the S3 bucket to store emails. Must be globally unique.
+  DomainName:
+    Type: String
+    Description: Your verified domain name in SES.
+
+Resources:
+  MailBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Ref BucketName
+      AccessControl: Private
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+
+  MailBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref MailBucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ses.amazonaws.com
+            Action: s3:PutObject
+            Resource: !Sub 'arn:aws:s3:::${MailBucket}/*'
+            Condition:
+              StringEquals:
+                aws:Referer: !Ref AWS::AccountId
+
+  SesReceiptRuleSet:
+    Type: AWS::SES::ReceiptRuleSet
+    Properties:
+      RuleSetName: S3Pop3RuleSet
+
+  SesReceiptRule:
+    Type: AWS::SES::ReceiptRule
+    Properties:
+      RuleSetName: !Ref SesReceiptRuleSet
+      Rule:
+        Name: S3Pop3SaveToS3
+        Enabled: true
+        ScanEnabled: true
+        Recipients:
+          - !Ref DomainName
+        Actions:
+          - S3Action:
+              BucketName: !Ref MailBucket
+              ObjectKeyPrefix: ''
+
+Outputs:
+  S3BucketName:
+    Description: The name of the created S3 bucket
+    Value: !Ref MailBucket

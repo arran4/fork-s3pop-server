@@ -44,13 +44,30 @@ At present the instructions assume some familiarity with AWS usage and conigurin
  - Download the zip in releases and unzip into a directory you want to keep it
  - Edit your server-config.json (in the root directory of your install), set the bucket name to the name of your bucket. Note the port (or choose your own) for use in configuring your client.
  - If you are using an S3-compatible service like Cloudflare R2, you can also set `s3Endpoint` to your custom endpoint URL and `s3ForcePathStyle` to true if required.
+ - Set `userMode` in your config to handle sub keys:
+   - `legacy` (default): Uses the username as the exact prefix in the bucket.
+   - `all`: Downloads all emails in the bucket under `basePath` regardless of user.
+   - `prefix`: Uses `basePath` + username + `keyDivider` (e.g. `email/bob@domain.com/`).
  - Optionally set the program to start when your os starts
 ### Client Configuration
 Your client needs to be able to be setup to use seperate user names and password for both the POP3 connection and the SMTP server, the app has been tested with Thunderbird and the Windows 10 mail client. 
 
 Cofigure the pop server to have host 127.0.0.1 with the same port as you set in the pop3 config. (If you cant set the port for your client you may need to change the config for the server to match what the client expects, this will usually be port 110).
 
-The username you use to connect to the POP3 server should be the key prefix (folder) you use in your S3 bucket to store email.
+The username you use to connect to the POP3 server depends on the `userMode` setting. In `legacy` mode it should be the key prefix (folder) you use in your S3 bucket to store email. In `prefix` mode, it is the sub-identifier (e.g. `bob@domain.com`) used after the `basePath` and before the `keyDivider`.
+
+### Additional Integrations
+The `contrib` directory contains useful tools for deploying S3 POP3 server with various infrastructure providers:
+
+#### Cloudflare R2 Email Routing
+You can use a Cloudflare Worker to receive emails via Cloudflare Email Routing and store them in an R2 bucket.
+- See `contrib/cloudflare_worker.js` for the worker code.
+- Bind your R2 bucket to the worker as `MAIL_BUCKET`.
+- In `server-config.json`, use `userMode: "prefix"`, `basePath: "email/"`, and `keyDivider: "/"` to easily support multiple addresses. Use the sanitized email address (e.g., `bob_domain_com`) as the POP3 username.
+
+#### AWS CloudFormation
+You can use AWS CloudFormation or SAM CLI to deploy the required S3 Bucket, Bucket Policy, and SES Receipt Rules.
+- See `contrib/aws_cloudformation.yaml` for a CloudFormation template that provisions these resources.
 
 For the SMTP configuration use the AWS smtp servers, configuration details for these can be found here: https://docs.aws.amazon.com/ses/latest/DeveloperGuide/send-email-smtp.html    
 

@@ -117,7 +117,7 @@ type (
 	S3ForcePathStyle *bool
 )
 
-func DownloadEmails(ctx context.Context, emailBucket, emailFolder string, opts ...any) error {
+func DownloadEmails(ctx context.Context, emailBucket, s3Prefix, userName string, opts ...any) error {
 
 	client, err := getClient(opts...)
 	if nil != err {
@@ -126,14 +126,14 @@ func DownloadEmails(ctx context.Context, emailBucket, emailFolder string, opts .
 
 	params := &s3.ListObjectsV2Input{
 		Bucket: aws.String(emailBucket),
-		Prefix: aws.String(emailFolder),
+		Prefix: aws.String(s3Prefix),
 	}
 
 	resp, err := client.ListObjectsV2(ctx, params)
 	if nil != err {
 		return err
 	}
-	userEmailDir := mailutils.GetEmailDir(emailFolder)
+	userEmailDir := mailutils.GetEmailDir(userName)
 	filesByIndex, filesByName := loadIndex(userEmailDir)
 
 	for _, key := range resp.Contents {

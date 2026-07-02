@@ -51,6 +51,9 @@ type ServerConfig struct {
 	S3Bucket         string                   `json:"s3Bucket"`
 	S3Endpoint       backend.S3Endpoint       `json:"s3Endpoint"`
 	S3ForcePathStyle backend.S3ForcePathStyle `json:"s3ForcePathStyle"`
+	UserMode         string                   `json:"userMode"`
+	KeyDivider       string                   `json:"keyDivider"`
+	BasePath         string                   `json:"basePath"`
 }
 
 func main() {
@@ -78,6 +81,9 @@ func loadConfig() (config *ServerConfig) {
 	configFilename := "server-config.json"
 	config = new(ServerConfig)
 	config.Port = defaultport
+	config.UserMode = "legacy"
+	config.KeyDivider = "/"
+	config.BasePath = ""
 	jsonData, err := os.ReadFile(configFilename)
 	if nil != err {
 		log.Fatal("No server-config.json found")
@@ -131,10 +137,19 @@ func handleClient(conn net.Conn, config *ServerConfig) {
 				writeErrResponse(conn, "No user name", false)
 				continue
 			}
+
+			searchPrefix := userName
+			if config.UserMode == "all" {
+				searchPrefix = config.BasePath
+			} else if config.UserMode == "prefix" {
+				searchPrefix = config.BasePath + userName + config.KeyDivider
+			}
+
 			emailDir = mailutils.GetEmailDir(userName)
 			err = backend.DownloadEmails(
 				context.TODO(),
 				emailBucket,
+				searchPrefix,
 				userName,
 				config.S3Endpoint,
 				config.S3ForcePathStyle,
