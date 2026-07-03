@@ -21,6 +21,7 @@ package backend
 import (
 	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -34,6 +35,16 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 
 	"github.com/FractalJim/s3pop-server/mailutils"
+)
+
+var (
+	ErrS3Client      = errors.New("failed to get S3 client")
+	ErrS3ListObjects = errors.New("failed to list S3 objects")
+	ErrS3Download    = errors.New("failed to download from S3")
+	ErrFileCreate    = errors.New("failed to create local file")
+	ErrUserCurrent   = errors.New("failed to get current user")
+	ErrAWSConfig     = errors.New("missing AWS config")
+	ErrAWSLoadConfig = errors.New("failed to load AWS default config")
 )
 
 const indexFileName = "_email_index.txt"
@@ -121,7 +132,7 @@ func DownloadEmails(ctx context.Context, emailBucket, emailFolder string, opts .
 
 	client, err := getClient(opts...)
 	if nil != err {
-		return err
+		return fmt.Errorf("%w: %w", ErrS3Client, err)
 	}
 
 	params := &s3.ListObjectsV2Input{
@@ -131,7 +142,7 @@ func DownloadEmails(ctx context.Context, emailBucket, emailFolder string, opts .
 
 	resp, err := client.ListObjectsV2(ctx, params)
 	if nil != err {
-		return err
+		return fmt.Errorf("%w: %w", ErrS3ListObjects, err)
 	}
 	userEmailDir := mailutils.GetEmailDir(emailFolder)
 	filesByIndex, filesByName := loadIndex(userEmailDir)
@@ -144,7 +155,7 @@ func DownloadEmails(ctx context.Context, emailBucket, emailFolder string, opts .
 			emailFile := filepath.Join(userEmailDir, emailID)
 			err = downloadFile(ctx, *key.Key, emailBucket, emailFile, client)
 			if nil != err {
-				return err
+				return fmt.Errorf("%w: %w", ErrS3Download, err)
 			}
 			processEmail(userEmailDir, emailID, nextPopID)
 			appendIndex(emailID, userEmailDir, filesByIndex, filesByName)
@@ -209,7 +220,7 @@ func downloadFile(ctx context.Context, key, bucket string, outputPath string, cl
 	fmt.Printf("Beginning download of %s.\n", key)
 	file, err := os.Create(outputPath)
 	if nil != err {
-		return err
+		return fmt.Errorf("%w %s: %w", ErrFileCreate, outputPath, err)
 	}
 	defer func() { _ = file.Close() }()
 
@@ -221,7 +232,7 @@ func downloadFile(ctx context.Context, key, bucket string, outputPath string, cl
 		WriterAt: file,
 	})
 	if nil != err {
-		return err
+		return fmt.Errorf("%w %s: %w", ErrS3Download, key, err)
 	}
 	_ = file.Close()
 	fmt.Printf("Download of %s complete.\n", key)
@@ -240,17 +251,17 @@ func getClient(opts ...any) (client *s3.Client, err error) {
 	var userInfo *user.User
 	userInfo, err = user.Current()
 	if nil != err {
-		return nil, err
+		return nil, fmt.Errorf("%w: %w", ErrUserCurrent, err)
 	}
 
 	_, err = os.Stat(filepath.Join(userInfo.HomeDir, ".aws", "config"))
 	if nil != err {
-		return nil, err
+		return nil, fmt.Errorf("%w: %w", ErrAWSConfig, err)
 	}
 
 	cfg, err := config.LoadDefaultConfig(context.TODO())
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("%w: %w", ErrAWSLoadConfig, err)
 	}
 
 	var customEndpoint *string
