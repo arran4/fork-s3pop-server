@@ -62,7 +62,19 @@ Configuration can be passed via environment variables instead of (or overriding)
 | `S3POP_S3_FORCE_PATH_STYLE` | Force path style URLs for S3 operations (`true`/`false`). | `true` |
 | `S3POP_CONFIG` | Path to a custom JSON configuration file. | `/etc/s3pop/config.json` |
 
-#### Docker Run Example (Cloudflare R2)
+#### Docker Run Examples
+
+**Standard AWS S3**
+```bash
+docker run -d -p 5110:5110 \
+  -e S3POP_S3_BUCKET="my-email-bucket" \
+  -e AWS_ACCESS_KEY_ID="your_access_key" \
+  -e AWS_SECRET_ACCESS_KEY="your_secret_key" \
+  -e AWS_REGION="us-east-1" \
+  ghcr.io/arran4/s3pop-server:latest
+```
+
+**Cloudflare R2**
 ```bash
 docker run -d -p 5110:5110 \
   -e S3POP_S3_BUCKET="my-email-bucket" \
@@ -74,9 +86,12 @@ docker run -d -p 5110:5110 \
   ghcr.io/arran4/s3pop-server:latest
 ```
 
-#### Docker Compose Example (AWS with Credentials File)
-The AWS SDK for Go v2 supports the standard `AWS_SHARED_CREDENTIALS_FILE` environment variable ([see AWS SDK Docs](https://aws.github.io/aws-sdk-go-v2/docs/configuring-sdk/#environment-variables)). You can use this to securely mount and pass your AWS credentials without exposing them in your compose file.
 
+#### Docker Compose Examples (with Credentials File)
+
+The AWS SDK for Go v2 supports the standard `AWS_SHARED_CREDENTIALS_FILE` environment variable ([see AWS SDK Docs](https://aws.github.io/aws-sdk-go-v2/docs/configuring-sdk/#environment-variables)). You can use this to securely mount and pass your AWS credentials without exposing them directly in your compose file.
+
+**Standard AWS S3**
 ```yaml
 version: '3.8'
 
@@ -91,6 +106,25 @@ services:
       - AWS_SHARED_CREDENTIALS_FILE=/etc/s3pop/aws_credentials
     volumes:
       - ./my_aws_credentials:/etc/s3pop/aws_credentials:ro
+```
+
+**Cloudflare R2**
+```yaml
+version: '3.8'
+
+services:
+  s3pop-server:
+    image: ghcr.io/arran4/s3pop-server:latest
+    ports:
+      - "5110:5110"
+    environment:
+      - S3POP_S3_BUCKET=my-email-bucket
+      - S3POP_S3_ENDPOINT=https://<ACCOUNT_ID>.r2.cloudflarestorage.com
+      - S3POP_S3_FORCE_PATH_STYLE=true
+      - AWS_REGION=auto
+      - AWS_SHARED_CREDENTIALS_FILE=/etc/s3pop/aws_credentials
+    volumes:
+      - ./my_r2_credentials:/etc/s3pop/aws_credentials:ro
 ```
 
 ### Client Configuration
