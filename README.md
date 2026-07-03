@@ -62,18 +62,20 @@ Configuration can be passed via environment variables instead of (or overriding)
 | `S3POP_S3_FORCE_PATH_STYLE` | Force path style URLs for S3 operations (`true`/`false`). | `true` |
 | `S3POP_CONFIG` | Path to a custom JSON configuration file. | `/etc/s3pop/config.json` |
 
-#### Docker Run Example
+#### Docker Run Example (Cloudflare R2)
 ```bash
 docker run -d -p 5110:5110 \
   -e S3POP_S3_BUCKET="my-email-bucket" \
-  -e AWS_ACCESS_KEY_ID="your_access_key" \
-  -e AWS_SECRET_ACCESS_KEY="your_secret_key" \
-  -e AWS_REGION="us-east-1" \
+  -e S3POP_S3_ENDPOINT="https://<ACCOUNT_ID>.r2.cloudflarestorage.com" \
+  -e S3POP_S3_FORCE_PATH_STYLE="true" \
+  -e AWS_ACCESS_KEY_ID="your_r2_access_key" \
+  -e AWS_SECRET_ACCESS_KEY="your_r2_secret_key" \
+  -e AWS_REGION="auto" \
   ghcr.io/arran4/s3pop-server:latest
 ```
 
-#### Docker Compose Example with Secrets
-You can also use Docker Compose, which is especially useful when passing in AWS credentials securely.
+#### Docker Compose Example (AWS with Credentials File)
+The AWS SDK for Go v2 supports the standard `AWS_SHARED_CREDENTIALS_FILE` environment variable ([see AWS SDK Docs](https://aws.github.io/aws-sdk-go-v2/docs/configuring-sdk/#environment-variables)). You can use this to securely mount and pass your AWS credentials without exposing them in your compose file.
 
 ```yaml
 version: '3.8'
@@ -86,17 +88,9 @@ services:
     environment:
       - S3POP_S3_BUCKET=my-email-bucket
       - AWS_REGION=us-east-1
-      - AWS_ACCESS_KEY_ID_FILE=/run/secrets/aws_access_key_id
-      - AWS_SECRET_ACCESS_KEY_FILE=/run/secrets/aws_secret_access_key
-    secrets:
-      - aws_access_key_id
-      - aws_secret_access_key
-
-secrets:
-  aws_access_key_id:
-    file: ./secrets/aws_access_key_id.txt
-  aws_secret_access_key:
-    file: ./secrets/aws_secret_access_key.txt
+      - AWS_SHARED_CREDENTIALS_FILE=/etc/s3pop/aws_credentials
+    volumes:
+      - ./my_aws_credentials:/etc/s3pop/aws_credentials:ro
 ```
 
 ### Client Configuration
