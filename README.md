@@ -62,6 +62,43 @@ Configuration can be passed via environment variables instead of (or overriding)
 | `S3POP_S3_FORCE_PATH_STYLE` | Force path style URLs for S3 operations (`true`/`false`). | `true` |
 | `S3POP_CONFIG` | Path to a custom JSON configuration file. | `/etc/s3pop/config.json` |
 
+#### Docker Run Example
+```bash
+docker run -d -p 5110:5110 \
+  -e S3POP_S3_BUCKET="my-email-bucket" \
+  -e AWS_ACCESS_KEY_ID="your_access_key" \
+  -e AWS_SECRET_ACCESS_KEY="your_secret_key" \
+  -e AWS_REGION="us-east-1" \
+  ghcr.io/arran4/s3pop-server:latest
+```
+
+#### Docker Compose Example with Secrets
+You can also use Docker Compose, which is especially useful when passing in AWS credentials securely.
+
+```yaml
+version: '3.8'
+
+services:
+  s3pop-server:
+    image: ghcr.io/arran4/s3pop-server:latest
+    ports:
+      - "5110:5110"
+    environment:
+      - S3POP_S3_BUCKET=my-email-bucket
+      - AWS_REGION=us-east-1
+      - AWS_ACCESS_KEY_ID_FILE=/run/secrets/aws_access_key_id
+      - AWS_SECRET_ACCESS_KEY_FILE=/run/secrets/aws_secret_access_key
+    secrets:
+      - aws_access_key_id
+      - aws_secret_access_key
+
+secrets:
+  aws_access_key_id:
+    file: ./secrets/aws_access_key_id.txt
+  aws_secret_access_key:
+    file: ./secrets/aws_secret_access_key.txt
+```
+
 ### Client Configuration
 Your client needs to be able to be setup to use seperate user names and password for both the POP3 connection and the SMTP server, the app has been tested with Thunderbird and the Windows 10 mail client. 
 
