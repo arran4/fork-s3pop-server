@@ -43,6 +43,11 @@ At present the instructions assume some familiarity with AWS usage and conigurin
  #### POP3 Server Config
  - Download the zip in releases and unzip into a directory you want to keep it
  - Edit your server-config.json (in the root directory of your install), set the bucket name to the name of your bucket. Note the port (or choose your own) for use in configuring your client.
+ - Alternatively, you can use the official Docker image. You can pull the latest image with:
+   ```bash
+   docker pull ghcr.io/arran4/s3pop-server:latest
+   ```
+   Configuration can be passed via environment variables (`S3POP_PORT`, `S3POP_S3_BUCKET`, `S3POP_S3_ENDPOINT`, `S3POP_S3_FORCE_PATH_STYLE`).
  - If you are using an S3-compatible service like Cloudflare R2, you can also set `s3Endpoint` to your custom endpoint URL and `s3ForcePathStyle` to true if required.
  - Optionally set the program to start when your os starts
 ### Client Configuration
