@@ -30,6 +30,8 @@ import (
 	"github.com/FractalJim/s3pop-server/mailutils"
 )
 
+var ErrIndexOutOfRange = errors.New("index out of range")
+
 func getMessageData(emailDir string) []*mailutils.MailData {
 	var emailMetafiles []string
 	_ = filepath.Walk(emailDir, func(path string, info os.FileInfo, _ error) error {
@@ -71,7 +73,7 @@ func getSafeArg(args []string, argIndex int) (string, error) {
 	if argIndex < len(args) {
 		return args[argIndex], nil
 	}
-	return "", errors.New("index out of range")
+	return "", ErrIndexOutOfRange
 }
 
 func writeOKResponse(conn net.Conn, msg string, log bool, args ...interface{}) {
