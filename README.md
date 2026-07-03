@@ -45,6 +45,88 @@ At present the instructions assume some familiarity with AWS usage and conigurin
  - Edit your server-config.json (in the root directory of your install), set the bucket name to the name of your bucket. Note the port (or choose your own) for use in configuring your client.
  - If you are using an S3-compatible service like Cloudflare R2, you can also set `s3Endpoint` to your custom endpoint URL and `s3ForcePathStyle` to true if required.
  - Optionally set the program to start when your os starts
+
+### Docker
+Alternatively, you can use the official Docker image. You can pull the latest image with:
+```bash
+docker pull ghcr.io/arran4/s3pop-server:latest
+```
+
+Configuration can be passed via environment variables instead of (or overriding) the JSON configuration file:
+
+| Environment Variable | Description | Example |
+|---|---|---|
+| `S3POP_PORT` | The port the POP3 server will listen on (default 5110). | `110` |
+| `S3POP_S3_BUCKET` | The name of the S3 bucket to read emails from. | `my-email-bucket` |
+| `S3POP_S3_ENDPOINT` | Custom S3 endpoint URL (e.g. for Cloudflare R2). | `https://account-id.r2.cloudflarestorage.com` |
+| `S3POP_S3_FORCE_PATH_STYLE` | Force path style URLs for S3 operations (`true`/`false`). | `true` |
+| `S3POP_CONFIG` | Path to a custom JSON configuration file. | `/etc/s3pop/config.json` |
+
+#### Docker Run Examples
+
+**Standard AWS S3**
+```bash
+docker run -d -p 5110:5110 \
+  -e S3POP_S3_BUCKET="my-email-bucket" \
+  -e AWS_ACCESS_KEY_ID="your_access_key" \
+  -e AWS_SECRET_ACCESS_KEY="your_secret_key" \
+  -e AWS_REGION="us-east-1" \
+  ghcr.io/arran4/s3pop-server:latest
+```
+
+**Cloudflare R2**
+```bash
+docker run -d -p 5110:5110 \
+  -e S3POP_S3_BUCKET="my-email-bucket" \
+  -e S3POP_S3_ENDPOINT="https://<ACCOUNT_ID>.r2.cloudflarestorage.com" \
+  -e S3POP_S3_FORCE_PATH_STYLE="true" \
+  -e AWS_ACCESS_KEY_ID="your_r2_access_key" \
+  -e AWS_SECRET_ACCESS_KEY="your_r2_secret_key" \
+  -e AWS_REGION="auto" \
+  ghcr.io/arran4/s3pop-server:latest
+```
+
+
+#### Docker Compose Examples (with Credentials File)
+
+The AWS SDK for Go v2 supports the standard `AWS_SHARED_CREDENTIALS_FILE` environment variable ([see AWS SDK Docs](https://aws.github.io/aws-sdk-go-v2/docs/configuring-sdk/#environment-variables)). You can use this to securely mount and pass your AWS credentials without exposing them directly in your compose file.
+
+**Standard AWS S3**
+```yaml
+version: '3.8'
+
+services:
+  s3pop-server:
+    image: ghcr.io/arran4/s3pop-server:latest
+    ports:
+      - "5110:5110"
+    environment:
+      - S3POP_S3_BUCKET=my-email-bucket
+      - AWS_REGION=us-east-1
+      - AWS_SHARED_CREDENTIALS_FILE=/etc/s3pop/aws_credentials
+    volumes:
+      - ./my_aws_credentials:/etc/s3pop/aws_credentials:ro
+```
+
+**Cloudflare R2**
+```yaml
+version: '3.8'
+
+services:
+  s3pop-server:
+    image: ghcr.io/arran4/s3pop-server:latest
+    ports:
+      - "5110:5110"
+    environment:
+      - S3POP_S3_BUCKET=my-email-bucket
+      - S3POP_S3_ENDPOINT=https://<ACCOUNT_ID>.r2.cloudflarestorage.com
+      - S3POP_S3_FORCE_PATH_STYLE=true
+      - AWS_REGION=auto
+      - AWS_SHARED_CREDENTIALS_FILE=/etc/s3pop/aws_credentials
+    volumes:
+      - ./my_r2_credentials:/etc/s3pop/aws_credentials:ro
+```
+
 ### Client Configuration
 Your client needs to be able to be setup to use seperate user names and password for both the POP3 connection and the SMTP server, the app has been tested with Thunderbird and the Windows 10 mail client. 
 
