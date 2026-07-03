@@ -10,3 +10,5 @@ WORKDIR /home/s3pop
 COPY s3pop-server /usr/local/bin/s3pop-server
 
 ENTRYPOINT ["/usr/local/bin/s3pop-server"]
+
+# Built using GoReleaser

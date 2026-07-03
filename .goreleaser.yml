@@ -32,3 +32,5 @@ dockers:
 
 checksum:
   name_template: checksums.txt
+
+# Configured to push to GitHub container registry
