@@ -85,18 +85,18 @@ func loadConfig() (config *ServerConfig) {
 	jsonData, err := os.ReadFile(configFilename)
 	if err == nil {
 		err = json.Unmarshal(jsonData, config)
-		if nil != err {
-			log.Fatal("Config file is not valid JSON")
+		if err != nil {
+			log.Fatalf("Config file is not valid JSON: %v", err)
 		}
 	} else if !os.IsNotExist(err) {
 		log.Fatalf("Error reading config file: %v", err)
 	}
 
 	if portStr := os.Getenv("S3POP_PORT"); portStr != "" {
-		if p, err := strconv.Atoi(portStr); err == nil {
+		if p, err := strconv.Atoi(portStr); err == nil && p > 0 && p <= 65535 {
 			config.Port = p
 		} else {
-			log.Fatalf("Invalid S3POP_PORT: %v", err)
+			log.Fatalf("Invalid S3POP_PORT: %s (must be a valid port number between 1 and 65535)", portStr)
 		}
 	}
 	if bucket := os.Getenv("S3POP_S3_BUCKET"); bucket != "" {
