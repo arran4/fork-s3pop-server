@@ -132,7 +132,7 @@ func DownloadEmails(ctx context.Context, emailBucket, emailFolder string, opts .
 
 	client, err := getClient(opts...)
 	if nil != err {
-		return fmt.Errorf("failed getting S3 client [%w]: %w", ErrS3Client, err)
+		return fmt.Errorf("%w: %w", ErrS3Client, err)
 	}
 
 	params := &s3.ListObjectsV2Input{
@@ -142,7 +142,7 @@ func DownloadEmails(ctx context.Context, emailBucket, emailFolder string, opts .
 
 	resp, err := client.ListObjectsV2(ctx, params)
 	if nil != err {
-		return fmt.Errorf("failed listing objects [%w]: %w", ErrS3ListObjects, err)
+		return fmt.Errorf("%w: %w", ErrS3ListObjects, err)
 	}
 	userEmailDir := mailutils.GetEmailDir(emailFolder)
 	filesByIndex, filesByName := loadIndex(userEmailDir)
@@ -155,7 +155,7 @@ func DownloadEmails(ctx context.Context, emailBucket, emailFolder string, opts .
 			emailFile := filepath.Join(userEmailDir, emailID)
 			err = downloadFile(ctx, *key.Key, emailBucket, emailFile, client)
 			if nil != err {
-				return fmt.Errorf("failed downloading file [%w]: %w", ErrS3Download, err)
+				return fmt.Errorf("%w: %w", ErrS3Download, err)
 			}
 			processEmail(userEmailDir, emailID, nextPopID)
 			appendIndex(emailID, userEmailDir, filesByIndex, filesByName)
@@ -220,7 +220,7 @@ func downloadFile(ctx context.Context, key, bucket string, outputPath string, cl
 	fmt.Printf("Beginning download of %s.\n", key)
 	file, err := os.Create(outputPath)
 	if nil != err {
-		return fmt.Errorf("failed to create file %s [%w]: %w", outputPath, ErrFileCreate, err)
+		return fmt.Errorf("%w %s: %w", ErrFileCreate, outputPath, err)
 	}
 	defer func() { _ = file.Close() }()
 
@@ -232,7 +232,7 @@ func downloadFile(ctx context.Context, key, bucket string, outputPath string, cl
 		WriterAt: file,
 	})
 	if nil != err {
-		return fmt.Errorf("failed to download object %s [%w]: %w", key, ErrS3Download, err)
+		return fmt.Errorf("%w %s: %w", ErrS3Download, key, err)
 	}
 	_ = file.Close()
 	fmt.Printf("Download of %s complete.\n", key)
@@ -251,17 +251,17 @@ func getClient(opts ...any) (client *s3.Client, err error) {
 	var userInfo *user.User
 	userInfo, err = user.Current()
 	if nil != err {
-		return nil, fmt.Errorf("could not get current user [%w]: %w", ErrUserCurrent, err)
+		return nil, fmt.Errorf("%w: %w", ErrUserCurrent, err)
 	}
 
 	_, err = os.Stat(filepath.Join(userInfo.HomeDir, ".aws", "config"))
 	if nil != err {
-		return nil, fmt.Errorf("could not stat aws config [%w]: %w", ErrAWSConfig, err)
+		return nil, fmt.Errorf("%w: %w", ErrAWSConfig, err)
 	}
 
 	cfg, err := config.LoadDefaultConfig(context.TODO())
 	if err != nil {
-		return nil, fmt.Errorf("could not load default config [%w]: %w", ErrAWSLoadConfig, err)
+		return nil, fmt.Errorf("%w: %w", ErrAWSLoadConfig, err)
 	}
 
 	var customEndpoint *string
