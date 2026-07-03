@@ -43,13 +43,25 @@ At present the instructions assume some familiarity with AWS usage and conigurin
  #### POP3 Server Config
  - Download the zip in releases and unzip into a directory you want to keep it
  - Edit your server-config.json (in the root directory of your install), set the bucket name to the name of your bucket. Note the port (or choose your own) for use in configuring your client.
- - Alternatively, you can use the official Docker image. You can pull the latest image with:
-   ```bash
-   docker pull ghcr.io/arran4/s3pop-server:latest
-   ```
-   Configuration can be passed via environment variables (`S3POP_PORT`, `S3POP_S3_BUCKET`, `S3POP_S3_ENDPOINT`, `S3POP_S3_FORCE_PATH_STYLE`).
  - If you are using an S3-compatible service like Cloudflare R2, you can also set `s3Endpoint` to your custom endpoint URL and `s3ForcePathStyle` to true if required.
  - Optionally set the program to start when your os starts
+
+### Docker
+Alternatively, you can use the official Docker image. You can pull the latest image with:
+```bash
+docker pull ghcr.io/arran4/s3pop-server:latest
+```
+
+Configuration can be passed via environment variables instead of (or overriding) the JSON configuration file:
+
+| Environment Variable | Description | Example |
+|---|---|---|
+| `S3POP_PORT` | The port the POP3 server will listen on (default 5110). | `110` |
+| `S3POP_S3_BUCKET` | The name of the S3 bucket to read emails from. | `my-email-bucket` |
+| `S3POP_S3_ENDPOINT` | Custom S3 endpoint URL (e.g. for Cloudflare R2). | `https://account-id.r2.cloudflarestorage.com` |
+| `S3POP_S3_FORCE_PATH_STYLE` | Force path style URLs for S3 operations (`true`/`false`). | `true` |
+| `S3POP_CONFIG` | Path to a custom JSON configuration file. | `/etc/s3pop/config.json` |
+
 ### Client Configuration
 Your client needs to be able to be setup to use seperate user names and password for both the POP3 connection and the SMTP server, the app has been tested with Thunderbird and the Windows 10 mail client. 
 
