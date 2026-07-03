@@ -75,7 +75,11 @@ func main() {
 }
 
 func loadConfig() (config *ServerConfig) {
-	configFilename := "server-config.json"
+	configFilename := os.Getenv("S3POP_CONFIG")
+	if configFilename == "" {
+		configFilename = "server-config.json"
+	}
+
 	config = new(ServerConfig)
 	config.Port = defaultport
 	jsonData, err := os.ReadFile(configFilename)
