@@ -457,5 +457,5 @@ jobs:
 
           git add -A
           git commit --allow-empty -m "Prepare next development iteration $NEXT_VERSION"
-          git push -u origin "$BRANCH"
-          gh pr create --title "Prepare next development iteration $NEXT_VERSION" --body "Automated PR for next iteration." --base main --head "$BRANCH"
+          git push -f -u origin "$BRANCH"
+          gh pr create --title "Prepare next development iteration $NEXT_VERSION" --body "Automated PR for next iteration." --base main --head "$BRANCH" || echo "PR already exists"
