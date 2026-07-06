@@ -53,16 +53,24 @@ type ServerConfig struct {
 	S3ForcePathStyle backend.S3ForcePathStyle `json:"s3ForcePathStyle"`
 }
 
+var (
+	version = "dev"
+	commit  = "none"
+	date    = "unknown"
+)
+
 func main() {
+	log.Printf("Starting S3 POP3 Server version: %s, commit: %s, date: %s", version, commit, date)
+
 	config := loadConfig()
 
 	listener, err := net.Listen("tcp", ":"+strconv.Itoa(config.Port))
 
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error.. %s", err.Error())
+		log.Fatalf("Error.. %s", err.Error())
 	}
-	fmt.Println("Server started.")
-	fmt.Println("Listening on port: " + strconv.Itoa(config.Port))
+	log.Println("Server started.")
+	log.Println("Listening on port: " + strconv.Itoa(config.Port))
 	for {
 		conn, err := listener.Accept()
 		if err != nil {
@@ -75,37 +83,53 @@ func main() {
 }
 
 func loadConfig() (config *ServerConfig) {
+	log.Println("Discovering configuration...")
 	configFilename := os.Getenv("S3POP_CONFIG")
-	if configFilename == "" {
+	configExplicitlyRequested := configFilename != ""
+	if !configExplicitlyRequested {
 		configFilename = "server-config.json"
 	}
 
 	config = new(ServerConfig)
 	config.Port = defaultport
+
 	jsonData, err := os.ReadFile(configFilename)
 	if err == nil {
+		log.Printf("Successfully loaded configuration from %s", configFilename)
 		err = json.Unmarshal(jsonData, config)
 		if err != nil {
 			log.Fatalf("Config file is not valid JSON: %v", err)
 		}
-	} else if !os.IsNotExist(err) {
-		log.Fatalf("Error reading config file: %v", err)
+	} else {
+		if os.IsNotExist(err) {
+			if configExplicitlyRequested {
+				log.Fatalf("Specified config file %s does not exist", configFilename)
+			} else {
+				log.Printf("Default config file %s not found, continuing with environment variables", configFilename)
+			}
+		} else {
+			log.Fatalf("Error reading config file: %v", err)
+		}
 	}
 
 	if portStr := os.Getenv("S3POP_PORT"); portStr != "" {
 		if p, err := strconv.Atoi(portStr); err == nil && p > 0 && p <= 65535 {
+			log.Printf("Using S3POP_PORT from environment: %d", p)
 			config.Port = p
 		} else {
 			log.Fatalf("Invalid S3POP_PORT: %s (must be a valid port number between 1 and 65535)", portStr)
 		}
 	}
 	if bucket := os.Getenv("S3POP_S3_BUCKET"); bucket != "" {
+		log.Printf("Using S3POP_S3_BUCKET from environment: %s", bucket)
 		config.S3Bucket = bucket
 	}
 	if endpoint := os.Getenv("S3POP_S3_ENDPOINT"); endpoint != "" {
+		log.Printf("Using S3POP_S3_ENDPOINT from environment: %s", endpoint)
 		config.S3Endpoint = backend.S3Endpoint(endpoint)
 	}
 	if forcePathStyle := os.Getenv("S3POP_S3_FORCE_PATH_STYLE"); forcePathStyle != "" {
+		log.Printf("Using S3POP_S3_FORCE_PATH_STYLE from environment: %s", forcePathStyle)
 		b, err := strconv.ParseBool(forcePathStyle)
 		if err != nil {
 			log.Fatalf("Invalid S3POP_S3_FORCE_PATH_STYLE: %v", err)
@@ -114,7 +138,7 @@ func loadConfig() (config *ServerConfig) {
 	}
 
 	if config.S3Bucket == "" {
-		log.Fatal("S3Bucket must be provided via config file or S3POP_S3_BUCKET environment variable")
+		log.Fatal("S3Bucket must be provided via config file or S3POP_S3_BUCKET environment variable. Valid configuration is required at startup.")
 	}
 
 	return
