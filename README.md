@@ -6,7 +6,7 @@ The program works by running a local POP3 server which downloads emails stored i
 Installation instructions are below. To use the application once installed you simply need to make sure it is running when you check your email with your mail client. 
 
 Setting up your email in this way could work for you if some or all of the below are true:
-- You are already (or want to) use AWS S3 or an S3-compatible service (like Cloudflare R2) to host your website or store your data.
+- You already use (or want to use) AWS S3 or an S3-compatible service (like Cloudflare R2) to host your website or store your data.
 - Your budget is limited or you want to save money.
 - You mainly want to access your email from one computer (not your phone.) Currently if you are using this program  marking your emails read on one computer would not mark them as read on another. There is currently no mobile version of this app available though if you would like to help write one pull requests are welcome. 
 - You want to separate your email receiving and storing infrastructure from your sending provider. Note that this server only handles receiving email (POP3); you must handle email sending (SMTP) through your chosen provider.
