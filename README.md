@@ -66,7 +66,7 @@ Configuration can be passed via environment variables instead of (or overriding)
 
 **Standard AWS S3**
 ```bash
-docker run -d -p 5110:5110 \
+docker run -d --rm --name s3pop-server -p 5110:5110 \
   -e S3POP_S3_BUCKET="my-email-bucket" \
   -e AWS_ACCESS_KEY_ID="your_access_key" \
   -e AWS_SECRET_ACCESS_KEY="your_secret_key" \
@@ -76,7 +76,7 @@ docker run -d -p 5110:5110 \
 
 **Cloudflare R2**
 ```bash
-docker run -d -p 5110:5110 \
+docker run -d --rm --name s3pop-server -p 5110:5110 \
   -e S3POP_S3_BUCKET="my-email-bucket" \
   -e S3POP_S3_ENDPOINT="https://<ACCOUNT_ID>.r2.cloudflarestorage.com" \
   -e S3POP_S3_FORCE_PATH_STYLE="true" \
@@ -86,6 +86,31 @@ docker run -d -p 5110:5110 \
   ghcr.io/arran4/s3pop-server:latest
 ```
 
+
+
+#### Docker Run Examples (with Docker Secrets / Mounts)
+
+**Standard AWS S3**
+```bash
+docker run -d --rm --name s3pop-server -p 5110:5110 \
+  -e S3POP_S3_BUCKET="my-email-bucket" \
+  -e AWS_REGION="us-east-1" \
+  -e AWS_SHARED_CREDENTIALS_FILE="/run/secrets/aws_credentials" \
+  -v ./my_aws_credentials:/run/secrets/aws_credentials:ro \
+  ghcr.io/arran4/s3pop-server:latest
+```
+
+**Cloudflare R2**
+```bash
+docker run -d --rm --name s3pop-server -p 5110:5110 \
+  -e S3POP_S3_BUCKET="my-email-bucket" \
+  -e S3POP_S3_ENDPOINT="https://<ACCOUNT_ID>.r2.cloudflarestorage.com" \
+  -e S3POP_S3_FORCE_PATH_STYLE="true" \
+  -e AWS_REGION="auto" \
+  -e AWS_SHARED_CREDENTIALS_FILE="/run/secrets/aws_credentials" \
+  -v ./my_r2_credentials:/run/secrets/aws_credentials:ro \
+  ghcr.io/arran4/s3pop-server:latest
+```
 
 #### Docker Compose Examples (with Credentials File)
 
@@ -125,6 +150,57 @@ services:
       - AWS_SHARED_CREDENTIALS_FILE=/etc/s3pop/aws_credentials
     volumes:
       - ./my_r2_credentials:/etc/s3pop/aws_credentials:ro
+```
+
+
+#### Docker Compose Examples (with Docker Secrets)
+
+Docker compose has native support for secrets which is the most secure way to pass credentials to containers.
+
+**Standard AWS S3**
+```yaml
+version: '3.8'
+
+services:
+  s3pop-server:
+    image: ghcr.io/arran4/s3pop-server:latest
+    ports:
+      - "5110:5110"
+    environment:
+      - S3POP_S3_BUCKET=my-email-bucket
+      - AWS_REGION=us-east-1
+      - AWS_SHARED_CREDENTIALS_FILE=/run/secrets/aws_credentials
+    secrets:
+      - source: aws_credentials
+        target: aws_credentials
+
+secrets:
+  aws_credentials:
+    file: ./my_aws_credentials
+```
+
+**Cloudflare R2**
+```yaml
+version: '3.8'
+
+services:
+  s3pop-server:
+    image: ghcr.io/arran4/s3pop-server:latest
+    ports:
+      - "5110:5110"
+    environment:
+      - S3POP_S3_BUCKET=my-email-bucket
+      - S3POP_S3_ENDPOINT=https://<ACCOUNT_ID>.r2.cloudflarestorage.com
+      - S3POP_S3_FORCE_PATH_STYLE=true
+      - AWS_REGION=auto
+      - AWS_SHARED_CREDENTIALS_FILE=/run/secrets/aws_credentials
+    secrets:
+      - source: aws_credentials
+        target: aws_credentials
+
+secrets:
+  aws_credentials:
+    file: ./my_r2_credentials
 ```
 
 ### Client Configuration
