@@ -108,7 +108,11 @@ func loadConfig() (config *ServerConfig) {
 				log.Printf("Default config file %s not found, continuing with environment variables", configFilename)
 			}
 		} else {
-			log.Fatalf("Error reading config file: %v", err)
+			if configExplicitlyRequested {
+				log.Fatalf("Error reading explicitly requested config file: %v", err)
+			} else {
+				log.Printf("Error reading default config file: %v, continuing with environment variables", err)
+			}
 		}
 	}
 
@@ -149,7 +153,11 @@ func loadConfig() (config *ServerConfig) {
 }
 
 func handleClient(conn net.Conn, config *ServerConfig) {
-	defer func() { _ = conn.Close() }()
+	defer func() {
+		if err := conn.Close(); err != nil {
+			log.Printf("Error closing connection: %v\n", err)
+		}
+	}()
 
 	var state = stateUnauthorized
 	var emailDir string
@@ -164,25 +172,25 @@ func handleClient(conn net.Conn, config *ServerConfig) {
 		// Reads a line from the client
 		rawLine, err := reader.ReadString('\n')
 		if err != nil {
-			fmt.Println("Error!!" + err.Error())
+			log.Println("Error!!" + err.Error())
 			return
 		}
 
 		// Parses the command
 		cmd, args := getCommand(rawLine)
 
-		fmt.Println("Recieved Command: " + cmd)
+		log.Println("Recieved Command: " + cmd)
 		err = nil
 		argNum := 0
 		var arg string
 		for err == nil {
 			arg, err = getSafeArg(args, argNum)
 			if nil == err {
-				fmt.Printf("Argument %d: %s\n", argNum, arg)
+				log.Printf("Argument %d: %s", argNum, arg)
 			}
 			argNum++
 		}
-		fmt.Println("")
+		log.Println("")
 		if cmd == "USER" && state == stateUnauthorized {
 			//User name is name of folder in bucket in S3
 			userName, err := getSafeArg(args, 0)
@@ -221,7 +229,7 @@ func handleClient(conn net.Conn, config *ServerConfig) {
 				var id int
 				id, _ = strconv.Atoi(msgID)
 				id--
-				if len(mailData) <= id {
+				if id < 0 || len(mailData) <= id {
 					writeErrResponse(conn, "no such message", false)
 					continue
 				}
@@ -251,7 +259,7 @@ func handleClient(conn net.Conn, config *ServerConfig) {
 			if err == nil {
 				id, _ = strconv.Atoi(msgID)
 				id--
-				if len(mailData) <= id {
+				if id < 0 || len(mailData) <= id {
 					writeErrResponse(conn, "no such message", false)
 					continue
 				}
@@ -279,7 +287,7 @@ func handleClient(conn net.Conn, config *ServerConfig) {
 			if err == nil {
 				id, _ = strconv.Atoi(msgID)
 				id--
-				if len(mailData) <= id {
+				if id < 0 || len(mailData) <= id {
 					writeErrResponse(conn, "no such message", false)
 					continue
 				}
@@ -303,8 +311,8 @@ func handleClient(conn net.Conn, config *ServerConfig) {
 			fileData, err := os.Open(fullFilePath)
 			if err != nil {
 				writeErrResponse(conn, "failed to open email %s", false, mailData[id].Name)
+				continue
 			}
-			defer func() { _ = fileData.Close() }()
 			writeOKResponse(conn, "%d octets", false, mailData[id].TotalSize)
 			bodyLinesRead := 0
 			inBody := false
@@ -328,7 +336,9 @@ func handleClient(conn net.Conn, config *ServerConfig) {
 
 			}
 			_, _ = fmt.Fprint(conn, multilineTerminator)
-			_ = fileData.Close()
+			if err := fileData.Close(); err != nil {
+				log.Printf("Error closing file: %v\n", err)
+			}
 
 		} else if cmd == "RETR" && state == stateTransaction {
 			msgID, err := getSafeArg(args, 0)
@@ -336,7 +346,7 @@ func handleClient(conn net.Conn, config *ServerConfig) {
 			if err == nil {
 				id, _ = strconv.Atoi(msgID)
 				id--
-				if len(mailData) <= id {
+				if id < 0 || len(mailData) <= id {
 					writeErrResponse(conn, "no such message", false)
 					continue
 				}
@@ -353,8 +363,8 @@ func handleClient(conn net.Conn, config *ServerConfig) {
 			fileData, err := os.Open(fullFilePath)
 			if err != nil {
 				writeErrResponse(conn, "failed to open email %s", false, mailData[id].Name)
+				continue
 			}
-			defer func() { _ = fileData.Close() }()
 			writeOKResponse(conn, "%d octets", false, mailData[id].TotalSize)
 
 			fileScanner := bufio.NewScanner(fileData)
@@ -368,7 +378,9 @@ func handleClient(conn net.Conn, config *ServerConfig) {
 
 			}
 			_, _ = fmt.Fprint(conn, multilineTerminator)
-			_ = fileData.Close()
+			if err := fileData.Close(); err != nil {
+				log.Printf("Error closing file: %v\n", err)
+			}
 
 		} else if cmd == "DELE" && state == stateTransaction {
 			msgID, err := getSafeArg(args, 0)
@@ -376,7 +388,7 @@ func handleClient(conn net.Conn, config *ServerConfig) {
 			if err == nil {
 				id, _ = strconv.Atoi(msgID)
 				id--
-				if len(mailData) <= id {
+				if id < 0 || len(mailData) <= id {
 					writeErrResponse(conn, "no such message", false)
 					continue
 				}
@@ -397,7 +409,6 @@ func handleClient(conn net.Conn, config *ServerConfig) {
 			writeOKResponse(conn, "", false)
 		} else if cmd == "QUIT" {
 			if state == stateTransaction {
-				_ = state
 				deleteItems(emailDir, mailData, deletedItems)
 			}
 			return

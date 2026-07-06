@@ -37,16 +37,25 @@ type MailData struct {
 	Name        string `json:"name"`
 }
 
-func (m *MailData) Save(emailDir string) {
+func (m *MailData) Save(emailDir string) error {
 	jsonData, err := json.Marshal(&m)
-	checkError(err)
+	if err != nil {
+		return err
+	}
 
 	metadataFilename := filepath.Join(emailDir, m.Name+".json")
 	metadataFile, err := os.Create(metadataFilename)
-	checkError(err)
-	defer func() { _ = metadataFile.Close() }()
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if err := metadataFile.Close(); err != nil {
+			log.Printf("Error closing metadata file: %v\n", err)
+		}
+	}()
 
-	_, _ = metadataFile.Write(jsonData)
+	_, err = metadataFile.Write(jsonData)
+	return err
 }
 
 func LoadMailData(emailDir string, filename string) (m *MailData) {
