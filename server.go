@@ -137,6 +137,10 @@ func loadConfig() (config *ServerConfig) {
 		config.S3ForcePathStyle = backend.S3ForcePathStyle(&b)
 	}
 
+	if config.Port <= 0 || config.Port > 65535 {
+		log.Fatalf("Invalid port: %d (must be a valid port number between 1 and 65535)", config.Port)
+	}
+
 	if config.S3Bucket == "" {
 		log.Fatal("S3Bucket must be provided via config file or S3POP_S3_BUCKET environment variable. Valid configuration is required at startup.")
 	}
