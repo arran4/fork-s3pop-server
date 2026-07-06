@@ -100,6 +100,10 @@ func writeErrResponse(conn net.Conn, msg string, log bool, args ...interface{}) 
 
 func deleteItems(emailDir string, mailData []*mailutils.MailData, deletedItems map[int]struct{}) (removeSucceed int, removeFailed int) {
 	for id := range deletedItems {
+		if id < 0 || id >= len(mailData) {
+			removeFailed++
+			continue
+		}
 		filename := filepath.Join(emailDir, mailData[id].Name)
 		errJSON := os.Remove(filename + ".json")
 		errFile := os.Remove(filename)

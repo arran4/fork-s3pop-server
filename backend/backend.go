@@ -175,6 +175,7 @@ func DownloadEmails(ctx context.Context, emailBucket, emailFolder string, opts .
 			}
 			if err := processEmail(userEmailDir, emailID, nextPopID); err != nil {
 				log.Printf("Error processing email %s: %v", emailID, err)
+				continue
 			}
 			if err := appendIndex(emailID, userEmailDir, filesByIndex, filesByName); err != nil {
 				log.Printf("Error appending index for %s: %v", emailID, err)
@@ -252,7 +253,7 @@ func downloadFile(ctx context.Context, key, bucket string, outputPath string, cl
 		return fmt.Errorf("%w %s: %w", ErrFileCreate, outputPath, err)
 	}
 	defer func() {
-		if err := file.Close(); err != nil {
+		if err := file.Close(); err != nil && !errors.Is(err, os.ErrClosed) {
 			log.Printf("Error closing file: %v\n", err)
 		}
 	}()

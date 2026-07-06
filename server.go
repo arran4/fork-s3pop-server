@@ -229,7 +229,7 @@ func handleClient(conn net.Conn, config *ServerConfig) {
 				var id int
 				id, _ = strconv.Atoi(msgID)
 				id--
-				if len(mailData) <= id {
+				if id < 0 || len(mailData) <= id {
 					writeErrResponse(conn, "no such message", false)
 					continue
 				}
@@ -259,7 +259,7 @@ func handleClient(conn net.Conn, config *ServerConfig) {
 			if err == nil {
 				id, _ = strconv.Atoi(msgID)
 				id--
-				if len(mailData) <= id {
+				if id < 0 || len(mailData) <= id {
 					writeErrResponse(conn, "no such message", false)
 					continue
 				}
@@ -287,7 +287,7 @@ func handleClient(conn net.Conn, config *ServerConfig) {
 			if err == nil {
 				id, _ = strconv.Atoi(msgID)
 				id--
-				if len(mailData) <= id {
+				if id < 0 || len(mailData) <= id {
 					writeErrResponse(conn, "no such message", false)
 					continue
 				}
@@ -311,12 +311,8 @@ func handleClient(conn net.Conn, config *ServerConfig) {
 			fileData, err := os.Open(fullFilePath)
 			if err != nil {
 				writeErrResponse(conn, "failed to open email %s", false, mailData[id].Name)
+				continue
 			}
-			defer func() {
-				if err := fileData.Close(); err != nil {
-					log.Printf("Error closing file: %v\n", err)
-				}
-			}()
 			writeOKResponse(conn, "%d octets", false, mailData[id].TotalSize)
 			bodyLinesRead := 0
 			inBody := false
@@ -350,7 +346,7 @@ func handleClient(conn net.Conn, config *ServerConfig) {
 			if err == nil {
 				id, _ = strconv.Atoi(msgID)
 				id--
-				if len(mailData) <= id {
+				if id < 0 || len(mailData) <= id {
 					writeErrResponse(conn, "no such message", false)
 					continue
 				}
@@ -367,12 +363,8 @@ func handleClient(conn net.Conn, config *ServerConfig) {
 			fileData, err := os.Open(fullFilePath)
 			if err != nil {
 				writeErrResponse(conn, "failed to open email %s", false, mailData[id].Name)
+				continue
 			}
-			defer func() {
-				if err := fileData.Close(); err != nil {
-					log.Printf("Error closing file: %v\n", err)
-				}
-			}()
 			writeOKResponse(conn, "%d octets", false, mailData[id].TotalSize)
 
 			fileScanner := bufio.NewScanner(fileData)
@@ -396,7 +388,7 @@ func handleClient(conn net.Conn, config *ServerConfig) {
 			if err == nil {
 				id, _ = strconv.Atoi(msgID)
 				id--
-				if len(mailData) <= id {
+				if id < 0 || len(mailData) <= id {
 					writeErrResponse(conn, "no such message", false)
 					continue
 				}
