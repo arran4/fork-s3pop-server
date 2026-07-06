@@ -70,7 +70,11 @@ func loadIndex(emailDir string) (filesByIndex map[int]*mailFile, filesByName map
 	var indexData *os.File
 	indexData, err = os.Open(indexFile)
 	checkError(err)
-	defer func() { _ = indexData.Close() }()
+	defer func() {
+		if err := indexData.Close(); err != nil {
+			log.Printf("Error closing index data file: %v\n", err)
+		}
+	}()
 
 	var indexScanner = bufio.NewScanner(indexData)
 	var currentIndex int
@@ -88,7 +92,7 @@ func loadIndex(emailDir string) (filesByIndex map[int]*mailFile, filesByName map
 	return
 }
 
-func appendIndex(name, emailDir string, filesByIndex map[int]*mailFile, filesByName map[string]*mailFile) {
+func appendIndex(name, emailDir string, filesByIndex map[int]*mailFile, filesByName map[string]*mailFile) error {
 	var indexFile = filepath.Join(emailDir, indexFileName)
 	var indexData *os.File
 	_, err := os.Stat(indexFile)
@@ -99,10 +103,20 @@ func appendIndex(name, emailDir string, filesByIndex map[int]*mailFile, filesByN
 		indexData, err = os.OpenFile(indexFile, os.O_APPEND|os.O_WRONLY, 0600)
 	}
 
-	checkError(err)
-	defer func() { _ = indexData.Close() }()
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if err := indexData.Close(); err != nil {
+			log.Printf("Error closing index data file: %v\n", err)
+		}
+	}()
 
-	_, _ = indexData.WriteString(name + "\n")
+	_, err = indexData.WriteString(name + "\n")
+	if err != nil {
+		return err
+	}
+
 	var newID = getNextID(filesByIndex)
 
 	var thisFile = &mailFile{
@@ -111,6 +125,8 @@ func appendIndex(name, emailDir string, filesByIndex map[int]*mailFile, filesByN
 	}
 	filesByIndex[newID] = thisFile
 	filesByName[name] = thisFile
+
+	return nil
 }
 
 func getNextID(filesByIndex map[int]*mailFile) int {
@@ -157,16 +173,23 @@ func DownloadEmails(ctx context.Context, emailBucket, emailFolder string, opts .
 			if nil != err {
 				return fmt.Errorf("%w: %w", ErrS3Download, err)
 			}
-			processEmail(userEmailDir, emailID, nextPopID)
-			appendIndex(emailID, userEmailDir, filesByIndex, filesByName)
+			if err := processEmail(userEmailDir, emailID, nextPopID); err != nil {
+				log.Printf("Error processing email %s: %v", emailID, err)
+			}
+			if err := appendIndex(emailID, userEmailDir, filesByIndex, filesByName); err != nil {
+				log.Printf("Error appending index for %s: %v", emailID, err)
+			}
 		}
 	}
 	return nil
 }
 
-func processEmail(emailDir string, filename string, id int) {
+func processEmail(emailDir string, filename string, id int) error {
 	emailFile := filepath.Join(emailDir, filename)
-	headers, body := splitEmail(emailFile)
+	headers, body, err := splitEmail(emailFile)
+	if err != nil {
+		return err
+	}
 	headerSize := calcPartSizeBytes(headers)
 	bodySize := calcPartSizeBytes(body)
 	metadata := &mailutils.MailData{
@@ -177,13 +200,19 @@ func processEmail(emailDir string, filename string, id int) {
 		MessageSize: bodySize,
 		TotalSize:   headerSize + bodySize,
 	}
-	metadata.Save(emailDir)
+	return metadata.Save(emailDir)
 }
 
-func splitEmail(fullFilePath string) (headers []string, body []string) {
+func splitEmail(fullFilePath string) (headers []string, body []string, err error) {
 	fileData, err := os.Open(fullFilePath)
-	checkError(err)
-	defer func() { _ = fileData.Close() }()
+	if err != nil {
+		return nil, nil, err
+	}
+	defer func() {
+		if err := fileData.Close(); err != nil {
+			log.Printf("Error closing file: %v\n", err)
+		}
+	}()
 
 	headers = make([]string, 0)
 	body = make([]string, 0)
@@ -217,12 +246,16 @@ func calcPartSizeBytes(part []string) int {
 
 func downloadFile(ctx context.Context, key, bucket string, outputPath string, client *s3.Client) error {
 
-	fmt.Printf("Beginning download of %s.\n", key)
+	log.Printf("Beginning download of %s.", key)
 	file, err := os.Create(outputPath)
 	if nil != err {
 		return fmt.Errorf("%w %s: %w", ErrFileCreate, outputPath, err)
 	}
-	defer func() { _ = file.Close() }()
+	defer func() {
+		if err := file.Close(); err != nil {
+			log.Printf("Error closing file: %v\n", err)
+		}
+	}()
 
 	downloader := transfermanager.New(client)
 
@@ -235,8 +268,8 @@ func downloadFile(ctx context.Context, key, bucket string, outputPath string, cl
 		return fmt.Errorf("%w %s: %w", ErrS3Download, key, err)
 	}
 	_ = file.Close()
-	fmt.Printf("Download of %s complete.\n", key)
-	fmt.Printf("Downloaded file written to %s.\n", outputPath)
+	log.Printf("Download of %s complete.", key)
+	log.Printf("Downloaded file written to %s.", outputPath)
 
 	return err
 }
@@ -244,7 +277,7 @@ func downloadFile(ctx context.Context, key, bucket string, outputPath string, cl
 func getClient(opts ...any) (client *s3.Client, err error) {
 	defer func() {
 		if r := recover(); r != nil {
-			fmt.Println("Panic creating Client:", r)
+			log.Println("Panic creating Client:", r)
 			err = fmt.Errorf("panic: %v", r)
 		}
 	}()

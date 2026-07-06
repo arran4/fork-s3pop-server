@@ -56,7 +56,7 @@ Configuration can be passed via environment variables instead of (or overriding)
 | `S3POP_S3_BUCKET` | The name of the S3 bucket to read emails from. | `my-email-bucket` |
 | `S3POP_S3_ENDPOINT` | Custom S3 endpoint URL (e.g. for Cloudflare R2). | `https://account-id.r2.cloudflarestorage.com` |
 | `S3POP_S3_FORCE_PATH_STYLE` | Force path style URLs for S3 operations (`true`/`false`). | `true` |
-| `S3POP_CONFIG` | Path to a custom JSON configuration file. | `/etc/s3pop/config.json` |
+| `S3POP_CONFIG` | Path to a custom JSON configuration file (defaults to `/home/s3pop/server-config.json` in Docker if not overridden, or `./server-config.json` locally). | `/etc/s3pop3/server-config.json` |
 
 #### Docker Run Examples
 

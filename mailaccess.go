@@ -22,6 +22,7 @@ package main
 import (
 	"errors"
 	"fmt"
+	"log"
 	"net"
 	"os"
 	"path/filepath"
@@ -34,7 +35,11 @@ var ErrIndexOutOfRange = errors.New("index out of range")
 
 func getMessageData(emailDir string) []*mailutils.MailData {
 	var emailMetafiles []string
-	_ = filepath.Walk(emailDir, func(path string, info os.FileInfo, _ error) error {
+	err := filepath.Walk(emailDir, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			log.Printf("Error accessing path %s: %v", path, err)
+			return err
+		}
 		if !info.IsDir() {
 			if filepath.Ext(path) == ".json" {
 				emailMetafiles = append(emailMetafiles, filepath.Base(path))
@@ -42,6 +47,9 @@ func getMessageData(emailDir string) []*mailutils.MailData {
 		}
 		return nil
 	})
+	if err != nil {
+		log.Printf("Error walking filepath %s: %v\n", emailDir, err)
+	}
 
 	var result = make([]*mailutils.MailData, 0)
 	for _, mailItem := range emailMetafiles {
@@ -93,9 +101,17 @@ func writeErrResponse(conn net.Conn, msg string, log bool, args ...interface{}) 
 func deleteItems(emailDir string, mailData []*mailutils.MailData, deletedItems map[int]struct{}) (removeSucceed int, removeFailed int) {
 	for id := range deletedItems {
 		filename := filepath.Join(emailDir, mailData[id].Name)
-		err := os.Remove(filename + ".json")
-		_ = os.Remove(filename)
-		if nil == err {
+		errJSON := os.Remove(filename + ".json")
+		errFile := os.Remove(filename)
+
+		if errJSON != nil {
+			log.Printf("Warning: failed to remove %s.json: %v\n", filename, errJSON)
+		}
+		if errFile != nil {
+			log.Printf("Warning: failed to remove %s: %v\n", filename, errFile)
+		}
+
+		if errJSON == nil && errFile == nil {
 			removeSucceed++
 		} else {
 			removeFailed++
