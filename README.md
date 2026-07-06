@@ -1,17 +1,15 @@
 # S3 POP3 Server
 
-This program is part of a solution to allow you to use AWS services to provide yourself with a cheap and functional custom email address. It enables you to read email delivered to an S3 bucket by Amazon Web Services (AWS) Simple Email Service (SES) in a standard mail reader such as Thunderbird or Windows Mail. 
-The program works by running a local POP3 server which downloads emails stored in raw MIME format in an AWS S3 Bucket and presenting them to your mail client as if it were a standard POP3 email server.
+This program is part of a solution to allow you to use AWS S3 or S3-compatible services (like Cloudflare R2) to provide yourself with a cheap and functional custom email address. It enables you to read email delivered to an S3 bucket by a routing service like Amazon Web Services (AWS) Simple Email Service (SES) or Cloudflare Email Routing in a standard mail reader such as Thunderbird or Windows Mail.
+The program works by running a local POP3 server which downloads emails stored in raw MIME format in an S3 Bucket and presents them to your mail client as if it were a standard POP3 email server.
 
 Installation instructions are below. To use the application once installed you simply need to make sure it is running when you check your email with your mail client. 
 
 Setting up your email in this way could work for you if some or all of the below are true:
-- You are already (or want to) use AWS S3 to host your website. 
+- You already use (or want to use) AWS S3 or an S3-compatible service (like Cloudflare R2) to host your website or store your data.
 - Your budget is limited or you want to save money.
 - You mainly want to access your email from one computer (not your phone.) Currently if you are using this program  marking your emails read on one computer would not mark them as read on another. There is currently no mobile version of this app available though if you would like to help write one pull requests are welcome. 
-- You want to be able to send (and not just receive) email from your own domain. If you are only worried about receiving email at your domain then there are several domain registrars that also offer email forwarding services you can use that are much easier to set up.
-- You want to be able to provide reassurance to your senders your emails come from your domain using DKIM and similar technologies.
-- You don't have data sovereignty constraints that mean you can't send your emails through smtp servers in Europe or the US (the only regions where the SES service is currently available). Note that you can still store your emails in any region (ie your S3 bucket can be in your region of choice).
+- You want to separate your email receiving and storing infrastructure from your sending provider. Note that this server only handles receiving email (POP3); you must handle email sending (SMTP) through your chosen provider.
 - You either have some technical nouse yourself or know someone who does and who is willing to help you set this up.
 
 You can contact me by email  on fractal dot mango at gmail dot com if you have questions.
@@ -34,10 +32,8 @@ At present the instructions assume some familiarity with AWS usage and configuri
  - Put these new credentials in your credentials file in the .aws folder in your home directory. Set you aws-region in your config file in this same directory to be the same as your bucket region (ap-southeast-2 if you are in Sydney)
  #### DNS Setup (Optional, only if you are using route53 for DNS)
   - Set up your domain to use AWS nameservers if it does not already-  
- #### Email Sending (Server Setup)
-   - Verify your domain for sending email with SES https://docs.aws.amazon.com/ses/latest/DeveloperGuide/verify-domains.html 
-  - Create SMTP user and record credentials
- - Move out of the SES sandbox https://docs.aws.amazon.com/ses/latest/DeveloperGuide/request-production-access.html
+ #### Email Sending (SMTP Setup)
+ - Email sending is handled outside of this server by your chosen provider (e.g., AWS SES, Mailgun, SendGrid, etc.). Configure your email client to use their SMTP settings.
  #### Email Receiving (Server Setup)
  - Set up a rule set to deliver emails sent to your desired email address to your s3 bucket.
  #### POP3 Server Config
@@ -210,7 +206,7 @@ Configure the pop server to have host 127.0.0.1 with the same port as you set in
 
 The username you use to connect to the POP3 server should be the key prefix (folder) you use in your S3 bucket to store email.
 
-For the SMTP configuration use the AWS smtp servers, configuration details for these can be found here: https://docs.aws.amazon.com/ses/latest/DeveloperGuide/send-email-smtp.html    
+For SMTP (sending) configuration, please refer to your email provider's documentation.
 
 
 
