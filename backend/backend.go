@@ -45,6 +45,14 @@ var (
 	ErrUserCurrent   = errors.New("failed to get current user")
 	ErrAWSConfig     = errors.New("missing AWS config")
 	ErrAWSLoadConfig = errors.New("failed to load AWS default config")
+	ErrFileOpen      = errors.New("failed to open file")
+	ErrFileWrite     = errors.New("failed to write file")
+	ErrFileRead      = errors.New("failed to read file")
+	ErrIndexOpen     = errors.New("failed to open index file")
+	ErrIndexScanner  = errors.New("error scanning index file")
+	ErrGetEmailDir   = errors.New("failed to get email directory")
+	ErrLoadIndex     = errors.New("failed to load index")
+	ErrProcessEmail  = errors.New("failed to process email")
 )
 
 const indexFileName = "_email_index.txt"
@@ -57,21 +65,23 @@ type mailFile struct {
 
 // index management functions
 // index keeps track of ids of all emails ever seen, it is never deleted from
-func loadIndex(emailDir string) (filesByIndex map[int]*mailFile, filesByName map[string]*mailFile) {
+func loadIndex(emailDir string) (filesByIndex map[int]*mailFile, filesByName map[string]*mailFile, err error) {
 	filesByIndex = make(map[int]*mailFile)
 	filesByName = make(map[string]*mailFile)
 	var indexFile = filepath.Join(emailDir, indexFileName)
-	_, err := os.Stat(indexFile)
+	_, err = os.Stat(indexFile)
 	if nil != err {
 		//index does not exist yet or cant be opened
-		return
+		return filesByIndex, filesByName, nil
 	}
 
 	var indexData *os.File
 	indexData, err = os.Open(indexFile)
-	checkError(err)
+	if err != nil {
+		return nil, nil, fmt.Errorf("%w: %w", ErrIndexOpen, err)
+	}
 	defer func() {
-		if err := indexData.Close(); err != nil {
+		if err := indexData.Close(); err != nil && !errors.Is(err, os.ErrClosed) {
 			log.Printf("Error closing index data file: %v\n", err)
 		}
 	}()
@@ -88,8 +98,10 @@ func loadIndex(emailDir string) (filesByIndex map[int]*mailFile, filesByName map
 		currentIndex++
 	}
 
-	checkError(indexScanner.Err())
-	return
+	if err := indexScanner.Err(); err != nil {
+		return nil, nil, fmt.Errorf("%w: %w", ErrIndexScanner, err)
+	}
+	return filesByIndex, filesByName, nil
 }
 
 func appendIndex(name, emailDir string, filesByIndex map[int]*mailFile, filesByName map[string]*mailFile) error {
@@ -104,17 +116,17 @@ func appendIndex(name, emailDir string, filesByIndex map[int]*mailFile, filesByN
 	}
 
 	if err != nil {
-		return err
+		return fmt.Errorf("%w: %w", ErrFileOpen, err)
 	}
 	defer func() {
-		if err := indexData.Close(); err != nil {
+		if err := indexData.Close(); err != nil && !errors.Is(err, os.ErrClosed) {
 			log.Printf("Error closing index data file: %v\n", err)
 		}
 	}()
 
 	_, err = indexData.WriteString(name + "\n")
 	if err != nil {
-		return err
+		return fmt.Errorf("%w: %w", ErrFileWrite, err)
 	}
 
 	var newID = getNextID(filesByIndex)
@@ -160,8 +172,14 @@ func DownloadEmails(ctx context.Context, emailBucket, emailFolder string, opts .
 	if nil != err {
 		return fmt.Errorf("%w: %w", ErrS3ListObjects, err)
 	}
-	userEmailDir := mailutils.GetEmailDir(emailFolder)
-	filesByIndex, filesByName := loadIndex(userEmailDir)
+	userEmailDir, err := mailutils.GetEmailDir(emailFolder)
+	if err != nil {
+		return fmt.Errorf("%w: %w", ErrGetEmailDir, err)
+	}
+	filesByIndex, filesByName, err := loadIndex(userEmailDir)
+	if err != nil {
+		return fmt.Errorf("%w: %w", ErrLoadIndex, err)
+	}
 
 	for _, key := range resp.Contents {
 		emailID := path.Base(*key.Key)
@@ -189,7 +207,7 @@ func processEmail(emailDir string, filename string, id int) error {
 	emailFile := filepath.Join(emailDir, filename)
 	headers, body, err := splitEmail(emailFile)
 	if err != nil {
-		return err
+		return fmt.Errorf("%w: %w", ErrProcessEmail, err)
 	}
 	headerSize := calcPartSizeBytes(headers)
 	bodySize := calcPartSizeBytes(body)
@@ -201,16 +219,19 @@ func processEmail(emailDir string, filename string, id int) error {
 		MessageSize: bodySize,
 		TotalSize:   headerSize + bodySize,
 	}
-	return metadata.Save(emailDir)
+	if err := metadata.Save(emailDir); err != nil {
+		return fmt.Errorf("%w: %w", ErrProcessEmail, err)
+	}
+	return nil
 }
 
 func splitEmail(fullFilePath string) (headers []string, body []string, err error) {
 	fileData, err := os.Open(fullFilePath)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, fmt.Errorf("%w: %w", ErrFileOpen, err)
 	}
 	defer func() {
-		if err := fileData.Close(); err != nil {
+		if err := fileData.Close(); err != nil && !errors.Is(err, os.ErrClosed) {
 			log.Printf("Error closing file: %v\n", err)
 		}
 	}()
@@ -232,6 +253,10 @@ func splitEmail(fullFilePath string) (headers []string, body []string, err error
 		} else {
 			body = append(body, fileScanner.Text())
 		}
+	}
+
+	if err := fileScanner.Err(); err != nil {
+		return nil, nil, fmt.Errorf("%w: %w", ErrFileRead, err)
 	}
 
 	return
@@ -327,8 +352,3 @@ func getClient(opts ...any) (client *s3.Client, err error) {
 	return
 }
 
-func checkError(err error) {
-	if err != nil {
-		log.Fatal(err)
-	}
-}

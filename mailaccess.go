@@ -31,9 +31,12 @@ import (
 	"github.com/FractalJim/s3pop-server/mailutils"
 )
 
-var ErrIndexOutOfRange = errors.New("index out of range")
+var (
+	ErrIndexOutOfRange = errors.New("index out of range")
+	ErrWalkDir         = errors.New("failed to walk directory")
+)
 
-func getMessageData(emailDir string) []*mailutils.MailData {
+func getMessageData(emailDir string) ([]*mailutils.MailData, error) {
 	var emailMetafiles []string
 	err := filepath.Walk(emailDir, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
@@ -48,15 +51,19 @@ func getMessageData(emailDir string) []*mailutils.MailData {
 		return nil
 	})
 	if err != nil {
-		log.Printf("Error walking filepath %s: %v\n", emailDir, err)
+		return nil, fmt.Errorf("%w: %w", ErrWalkDir, err)
 	}
 
 	var result = make([]*mailutils.MailData, 0)
 	for _, mailItem := range emailMetafiles {
-		itemDetails := mailutils.LoadMailData(emailDir, mailItem)
+		itemDetails, err := mailutils.LoadMailData(emailDir, mailItem)
+		if err != nil {
+			log.Printf("Error loading mail data for %s: %v", mailItem, err)
+			continue
+		}
 		result = append(result, itemDetails)
 	}
-	return result
+	return result, nil
 }
 
 func getStat(mailData []*mailutils.MailData, deletedItems map[int]struct{}) (count int, size int) {
