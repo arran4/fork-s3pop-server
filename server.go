@@ -24,6 +24,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 
 	"log"
@@ -198,7 +199,12 @@ func handleClient(conn net.Conn, config *ServerConfig) {
 				writeErrResponse(conn, "No user name", false)
 				continue
 			}
-			emailDir = mailutils.GetEmailDir(userName)
+			emailDir, err = mailutils.GetEmailDir(userName)
+			if err != nil {
+				log.Printf("Error getting email directory: %v", err)
+				writeErrResponse(conn, "Could not access user directory", false)
+				continue
+			}
 			err = backend.DownloadEmails(
 				context.TODO(),
 				emailBucket,
@@ -210,7 +216,12 @@ func handleClient(conn net.Conn, config *ServerConfig) {
 				writeErrResponse(conn, "Could not download emails: %s", false, err)
 				continue
 			}
-			mailData = getMessageData(emailDir)
+			mailData, err = getMessageData(emailDir)
+			if err != nil {
+				log.Printf("Error getting message data: %v", err)
+				writeErrResponse(conn, "Could not access message data", false)
+				continue
+			}
 			writeOKResponse(conn, "", true)
 
 		} else if cmd == "PASS" && state == stateUnauthorized {
@@ -335,8 +346,11 @@ func handleClient(conn net.Conn, config *ServerConfig) {
 				}
 
 			}
+			if err := fileScanner.Err(); err != nil {
+				log.Printf("Error reading email file: %v", err)
+			}
 			_, _ = fmt.Fprint(conn, multilineTerminator)
-			if err := fileData.Close(); err != nil {
+			if err := fileData.Close(); err != nil && !errors.Is(err, os.ErrClosed) {
 				log.Printf("Error closing file: %v\n", err)
 			}
 
@@ -377,8 +391,11 @@ func handleClient(conn net.Conn, config *ServerConfig) {
 				}
 
 			}
+			if err := fileScanner.Err(); err != nil {
+				log.Printf("Error reading email file: %v", err)
+			}
 			_, _ = fmt.Fprint(conn, multilineTerminator)
-			if err := fileData.Close(); err != nil {
+			if err := fileData.Close(); err != nil && !errors.Is(err, os.ErrClosed) {
 				log.Printf("Error closing file: %v\n", err)
 			}
 

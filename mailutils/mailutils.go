@@ -21,11 +21,22 @@ package mailutils
 
 import (
 	"encoding/json"
-
+	"errors"
+	"fmt"
 	"log"
 	"os"
 	"os/user"
 	"path/filepath"
+)
+
+var (
+	ErrJSONMarshal   = errors.New("failed to marshal JSON")
+	ErrJSONUnmarshal = errors.New("failed to unmarshal JSON")
+	ErrFileCreate    = errors.New("failed to create file")
+	ErrFileWrite     = errors.New("failed to write file")
+	ErrFileRead      = errors.New("failed to read file")
+	ErrUserCurrent   = errors.New("failed to get current user")
+	ErrDirCreate     = errors.New("failed to create directory")
 )
 
 type MailData struct {
@@ -40,60 +51,70 @@ type MailData struct {
 func (m *MailData) Save(emailDir string) error {
 	jsonData, err := json.Marshal(&m)
 	if err != nil {
-		return err
+		return fmt.Errorf("%w: %w", ErrJSONMarshal, err)
 	}
 
 	metadataFilename := filepath.Join(emailDir, m.Name+".json")
 	metadataFile, err := os.Create(metadataFilename)
 	if err != nil {
-		return err
+		return fmt.Errorf("%w: %w", ErrFileCreate, err)
 	}
 	defer func() {
-		if err := metadataFile.Close(); err != nil {
+		if err := metadataFile.Close(); err != nil && !errors.Is(err, os.ErrClosed) {
 			log.Printf("Error closing metadata file: %v\n", err)
 		}
 	}()
 
 	_, err = metadataFile.Write(jsonData)
-	return err
+	if err != nil {
+		return fmt.Errorf("%w: %w", ErrFileWrite, err)
+	}
+	if err := metadataFile.Close(); err != nil {
+		return fmt.Errorf("%w: %w", ErrFileWrite, err)
+	}
+	return nil
 }
 
-func LoadMailData(emailDir string, filename string) (m *MailData) {
+func LoadMailData(emailDir string, filename string) (m *MailData, err error) {
 	if filepath.Ext(filename) != ".json" {
 		filename += ".json"
 	}
 	metadataFilename := filepath.Join(emailDir, filename)
 	jsonData, err := os.ReadFile(metadataFilename)
-	checkError(err)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %w", ErrFileRead, err)
+	}
 
 	m = &MailData{Read: false}
 	err = json.Unmarshal(jsonData, m)
-	checkError(err)
-	return
+	if err != nil {
+		return nil, fmt.Errorf("%w: %w", ErrJSONUnmarshal, err)
+	}
+	return m, nil
 }
 
-func GetEmailDir(emailUser string) string {
+func GetEmailDir(emailUser string) (string, error) {
 	var userInfo *user.User
 	userInfo, err := user.Current()
-	checkError(err)
+	if err != nil {
+		return "", fmt.Errorf("%w: %w", ErrUserCurrent, err)
+	}
 
 	dirName := filepath.Join(userInfo.HomeDir, ".email")
 	_, err = os.Stat(dirName)
 	if nil != err {
 		err = os.Mkdir(dirName, 0700)
-		checkError(err)
+		if err != nil {
+			return "", fmt.Errorf("%w: %w", ErrDirCreate, err)
+		}
 	}
 	emailPath := filepath.Join(dirName, emailUser)
 	_, err = os.Stat(emailPath)
 	if nil != err {
 		err = os.Mkdir(emailPath, 0700)
-		checkError(err)
+		if err != nil {
+			return "", fmt.Errorf("%w: %w", ErrDirCreate, err)
+		}
 	}
-	return emailPath
-}
-
-func checkError(err error) {
-	if err != nil {
-		log.Fatal(err)
-	}
+	return emailPath, nil
 }
