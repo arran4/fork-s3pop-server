@@ -69,6 +69,9 @@ func (m *MailData) Save(emailDir string) error {
 	if err != nil {
 		return fmt.Errorf("%w: %w", ErrFileWrite, err)
 	}
+	if err := metadataFile.Close(); err != nil {
+		return fmt.Errorf("%w: %w", ErrFileWrite, err)
+	}
 	return nil
 }
 

@@ -70,9 +70,11 @@ func loadIndex(emailDir string) (filesByIndex map[int]*mailFile, filesByName map
 	filesByName = make(map[string]*mailFile)
 	var indexFile = filepath.Join(emailDir, indexFileName)
 	_, err = os.Stat(indexFile)
-	if nil != err {
-		//index does not exist yet or cant be opened
-		return filesByIndex, filesByName, nil
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return filesByIndex, filesByName, nil
+		}
+		return nil, nil, fmt.Errorf("%w: %w", ErrIndexOpen, err)
 	}
 
 	var indexData *os.File
@@ -126,6 +128,9 @@ func appendIndex(name, emailDir string, filesByIndex map[int]*mailFile, filesByN
 
 	_, err = indexData.WriteString(name + "\n")
 	if err != nil {
+		return fmt.Errorf("%w: %w", ErrFileWrite, err)
+	}
+	if err := indexData.Close(); err != nil {
 		return fmt.Errorf("%w: %w", ErrFileWrite, err)
 	}
 
