@@ -25,6 +25,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"flag"
 	"fmt"
 
 	"log"
@@ -63,7 +64,12 @@ var (
 func main() {
 	log.Printf("Starting S3 POP3 Server version: %s, commit: %s, date: %s", version, commit, date)
 
-	config := loadConfig()
+	configFlag := flag.String("config", "", "Path to the configuration file")
+	portFlag := flag.Int("port", 0, "Port to listen on (overrides config file and environment variables)")
+
+	flag.Parse()
+
+	config := loadConfig(configFlag, portFlag)
 
 	listener, err := net.Listen("tcp", ":"+strconv.Itoa(config.Port))
 
@@ -83,11 +89,21 @@ func main() {
 
 }
 
-func loadConfig() (config *ServerConfig) {
+func loadConfig(configFlag *string, portFlag *int) (config *ServerConfig) {
 	log.Println("Discovering configuration...")
-	configFilename := os.Getenv("S3POP_CONFIG")
-	configExplicitlyRequested := configFilename != ""
-	if !configExplicitlyRequested {
+
+	configFilename := ""
+	configExplicitlyRequested := false
+
+	if configFlag != nil && *configFlag != "" {
+		configFilename = *configFlag
+		configExplicitlyRequested = true
+		log.Printf("Using configuration file from command-line flag: %s", configFilename)
+	} else if envConfig := os.Getenv("S3POP_CONFIG"); envConfig != "" {
+		configFilename = envConfig
+		configExplicitlyRequested = true
+		log.Printf("Using configuration file from S3POP_CONFIG environment variable: %s", configFilename)
+	} else {
 		configFilename = "server-config.json"
 	}
 
@@ -140,6 +156,11 @@ func loadConfig() (config *ServerConfig) {
 			log.Fatalf("Invalid S3POP_S3_FORCE_PATH_STYLE: %v", err)
 		}
 		config.S3ForcePathStyle = backend.S3ForcePathStyle(&b)
+	}
+
+	if portFlag != nil && *portFlag != 0 {
+		log.Printf("Using port from command-line flag: %d", *portFlag)
+		config.Port = *portFlag
 	}
 
 	if config.Port <= 0 || config.Port > 65535 {
