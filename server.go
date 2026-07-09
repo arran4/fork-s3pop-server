@@ -133,7 +133,10 @@ func loadConfig(configFlag *string, portFlag *int) (config *ServerConfig) {
 		}
 	}
 
-	if portStr := os.Getenv("S3POP_PORT"); portStr != "" {
+	if portFlag != nil && *portFlag != 0 {
+		log.Printf("Using port from command-line flag: %d", *portFlag)
+		config.Port = *portFlag
+	} else if portStr := os.Getenv("S3POP_PORT"); portStr != "" {
 		if p, err := strconv.Atoi(portStr); err == nil && p > 0 && p <= 65535 {
 			log.Printf("Using S3POP_PORT from environment: %d", p)
 			config.Port = p
@@ -156,11 +159,6 @@ func loadConfig(configFlag *string, portFlag *int) (config *ServerConfig) {
 			log.Fatalf("Invalid S3POP_S3_FORCE_PATH_STYLE: %v", err)
 		}
 		config.S3ForcePathStyle = backend.S3ForcePathStyle(&b)
-	}
-
-	if portFlag != nil && *portFlag != 0 {
-		log.Printf("Using port from command-line flag: %d", *portFlag)
-		config.Port = *portFlag
 	}
 
 	if config.Port <= 0 || config.Port > 65535 {
