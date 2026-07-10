@@ -28,6 +28,9 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"os/signal"
+	"sync"
+	"syscall"
 
 	"log"
 	"net"
@@ -66,6 +69,9 @@ var (
 var usageTmpl string
 
 func main() {
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
 	configFlag := flag.String("config", "", "Path to the configuration file")
 	portFlag := flag.Int("port", 0, "Port to listen on (overrides config file and environment variables)")
 
@@ -86,15 +92,35 @@ func main() {
 	}
 	log.Println("Server started.")
 	log.Println("Listening on port: " + strconv.Itoa(config.Port))
+
+	var wg sync.WaitGroup
+
+	go func() {
+		<-ctx.Done()
+		log.Println("Shutdown signal received. Shutting down gracefully...")
+		_ = listener.Close()
+	}()
+
 	for {
 		conn, err := listener.Accept()
 		if err != nil {
+			if errors.Is(err, net.ErrClosed) {
+				break
+			}
+			log.Printf("Accept error: %v", err)
 			continue
 		}
 		// run as goroutine
-		go handleClient(conn, config)
+		wg.Add(1)
+		go func(c net.Conn, cfg *ServerConfig) {
+			defer wg.Done()
+			handleClient(c, cfg)
+		}(conn, config)
 	}
 
+	log.Println("Waiting for active connections to finish...")
+	wg.Wait()
+	log.Println("Server stopped.")
 }
 
 func loadConfig(configFlag *string, portFlag *int) (config *ServerConfig) {
