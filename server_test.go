@@ -30,8 +30,8 @@ func setupSession(t *testing.T, state int) (*pop3Session, net.Conn, func()) {
 	}
 
 	cleanup := func() {
-		serverConn.Close()
-		clientConn.Close()
+		_ = serverConn.Close()
+		_ = clientConn.Close()
 	}
 
 	return sess, clientConn, cleanup
