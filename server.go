@@ -259,25 +259,21 @@ func handleClient(conn net.Conn, config *ServerConfig) {
 		// Reads a line from the client
 		rawLine, err := reader.ReadString('\n')
 		if err != nil {
-			sessionLog.Println("Error!!" + err.Error())
+			sessionLog.Printf("Error reading from client: %v", err)
 			return
 		}
 
 		// Parses the command
 		cmd, args := getCommand(rawLine)
 
-		sessionLog.Println("Recieved Command: " + cmd)
-		err = nil
-		argNum := 0
-		var arg string
-		for err == nil {
-			arg, err = getSafeArg(args, argNum)
-			if nil == err {
-				sessionLog.Printf("Argument %d: %s", argNum, arg)
+		sessionLog.Printf("Received Command: %s", cmd)
+		for i := 0; ; i++ {
+			arg, err := getSafeArg(args, i)
+			if err != nil {
+				break
 			}
-			argNum++
+			sessionLog.Printf("Argument %d: %s", i, arg)
 		}
-		sessionLog.Println("")
 		if cmd == "USER" && state == stateUnauthorized {
 			//User name is name of folder in bucket in S3
 			userName, err := getSafeArg(args, 0)
