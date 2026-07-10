@@ -31,6 +31,7 @@ import (
 	"os/signal"
 	"sync"
 	"syscall"
+	"time"
 
 	"log"
 	"net"
@@ -69,9 +70,6 @@ var (
 var usageTmpl string
 
 func main() {
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
-
 	configFlag := flag.String("config", "", "Path to the configuration file")
 	portFlag := flag.Int("port", 0, "Port to listen on (overrides config file and environment variables)")
 
@@ -90,6 +88,10 @@ func main() {
 	if err != nil {
 		log.Fatalf("Error.. %s", err.Error())
 	}
+
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
 	log.Println("Server started.")
 	log.Println("Listening on port: " + strconv.Itoa(config.Port))
 
@@ -119,7 +121,17 @@ func main() {
 	}
 
 	log.Println("Waiting for active connections to finish...")
-	wg.Wait()
+	shutdownDone := make(chan struct{})
+	go func() {
+		wg.Wait()
+		close(shutdownDone)
+	}()
+
+	select {
+	case <-shutdownDone:
+	case <-time.After(30 * time.Second):
+		log.Println("Shutdown timed out. Forcing exit.")
+	}
 	log.Println("Server stopped.")
 }
 
