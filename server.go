@@ -30,6 +30,7 @@ import (
 	"fmt"
 	"os/signal"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -69,6 +70,13 @@ var (
 
 //go:embed usage.tmpl
 var usageTmpl string
+
+var sessionCounter uint64
+
+func generateSessionID() string {
+	id := atomic.AddUint64(&sessionCounter, 1)
+	return fmt.Sprintf("%08x", id)
+}
 
 func main() {
 	configFlag := flag.String("config", "", "Path to the configuration file")
@@ -229,9 +237,12 @@ func loadConfig(configFlag *string, portFlag *int) (config *ServerConfig) {
 }
 
 func handleClient(conn net.Conn, config *ServerConfig) {
+	sessionID := generateSessionID()
+	sessionLog := log.New(log.Writer(), fmt.Sprintf("[%s] ", sessionID), log.Flags())
+
 	defer func() {
 		if err := conn.Close(); err != nil && !errors.Is(err, net.ErrClosed) {
-			log.Printf("Error closing connection: %v\n", err)
+			sessionLog.Printf("Error closing connection: %v\n", err)
 		}
 	}()
 
@@ -248,25 +259,21 @@ func handleClient(conn net.Conn, config *ServerConfig) {
 		// Reads a line from the client
 		rawLine, err := reader.ReadString('\n')
 		if err != nil {
-			log.Println("Error!!" + err.Error())
+			sessionLog.Printf("Error reading from client: %v", err)
 			return
 		}
 
 		// Parses the command
 		cmd, args := getCommand(rawLine)
 
-		log.Println("Recieved Command: " + cmd)
-		err = nil
-		argNum := 0
-		var arg string
-		for err == nil {
-			arg, err = getSafeArg(args, argNum)
-			if nil == err {
-				log.Printf("Argument %d: %s", argNum, arg)
+		sessionLog.Printf("Received Command: %s", cmd)
+		for i := 0; ; i++ {
+			arg, err := getSafeArg(args, i)
+			if err != nil {
+				break
 			}
-			argNum++
+			sessionLog.Printf("Argument %d: %s", i, arg)
 		}
-		log.Println("")
 		if cmd == "USER" && state == stateUnauthorized {
 			//User name is name of folder in bucket in S3
 			userName, err := getSafeArg(args, 0)
@@ -276,7 +283,7 @@ func handleClient(conn net.Conn, config *ServerConfig) {
 			}
 			emailDir, err = mailutils.GetEmailDir(userName)
 			if err != nil {
-				log.Printf("Error getting email directory: %v", err)
+				sessionLog.Printf("Error getting email directory: %v", err)
 				writeErrResponse(conn, "Could not access user directory", false)
 				continue
 			}
@@ -293,7 +300,7 @@ func handleClient(conn net.Conn, config *ServerConfig) {
 			}
 			mailData, err = getMessageData(emailDir)
 			if err != nil {
-				log.Printf("Error getting message data: %v", err)
+				sessionLog.Printf("Error getting message data: %v", err)
 				writeErrResponse(conn, "Could not access message data", false)
 				continue
 			}
@@ -422,11 +429,11 @@ func handleClient(conn net.Conn, config *ServerConfig) {
 
 			}
 			if err := fileScanner.Err(); err != nil {
-				log.Printf("Error reading email file: %v", err)
+				sessionLog.Printf("Error reading email file: %v", err)
 			}
 			_, _ = fmt.Fprint(conn, multilineTerminator)
 			if err := fileData.Close(); err != nil && !errors.Is(err, os.ErrClosed) {
-				log.Printf("Error closing file: %v\n", err)
+				sessionLog.Printf("Error closing file: %v\n", err)
 			}
 
 		} else if cmd == "RETR" && state == stateTransaction {
@@ -467,11 +474,11 @@ func handleClient(conn net.Conn, config *ServerConfig) {
 
 			}
 			if err := fileScanner.Err(); err != nil {
-				log.Printf("Error reading email file: %v", err)
+				sessionLog.Printf("Error reading email file: %v", err)
 			}
 			_, _ = fmt.Fprint(conn, multilineTerminator)
 			if err := fileData.Close(); err != nil && !errors.Is(err, os.ErrClosed) {
-				log.Printf("Error closing file: %v\n", err)
+				sessionLog.Printf("Error closing file: %v\n", err)
 			}
 
 		} else if cmd == "DELE" && state == stateTransaction {
