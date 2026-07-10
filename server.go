@@ -23,8 +23,10 @@ package main
 import (
 	"bufio"
 	"context"
+	_ "embed"
 	"encoding/json"
 	"errors"
+	"flag"
 	"fmt"
 
 	"log"
@@ -60,10 +62,22 @@ var (
 	date    = "unknown"
 )
 
+//go:embed usage.tmpl
+var usageTmpl string
+
 func main() {
+	configFlag := flag.String("config", "", "Path to the configuration file")
+	portFlag := flag.Int("port", 0, "Port to listen on (overrides config file and environment variables)")
+
+	flag.Usage = func() {
+		fmt.Print(usageTmpl)
+	}
+
+	flag.Parse()
+
 	log.Printf("Starting S3 POP3 Server version: %s, commit: %s, date: %s", version, commit, date)
 
-	config := loadConfig()
+	config := loadConfig(configFlag, portFlag)
 
 	listener, err := net.Listen("tcp", ":"+strconv.Itoa(config.Port))
 
@@ -83,11 +97,21 @@ func main() {
 
 }
 
-func loadConfig() (config *ServerConfig) {
+func loadConfig(configFlag *string, portFlag *int) (config *ServerConfig) {
 	log.Println("Discovering configuration...")
-	configFilename := os.Getenv("S3POP_CONFIG")
-	configExplicitlyRequested := configFilename != ""
-	if !configExplicitlyRequested {
+
+	configFilename := ""
+	configExplicitlyRequested := false
+
+	if configFlag != nil && *configFlag != "" {
+		configFilename = *configFlag
+		configExplicitlyRequested = true
+		log.Printf("Using configuration file from command-line flag: %s", configFilename)
+	} else if envConfig := os.Getenv("S3POP_CONFIG"); envConfig != "" {
+		configFilename = envConfig
+		configExplicitlyRequested = true
+		log.Printf("Using configuration file from S3POP_CONFIG environment variable: %s", configFilename)
+	} else {
 		configFilename = "server-config.json"
 	}
 
@@ -117,7 +141,10 @@ func loadConfig() (config *ServerConfig) {
 		}
 	}
 
-	if portStr := os.Getenv("S3POP_PORT"); portStr != "" {
+	if portFlag != nil && *portFlag != 0 {
+		log.Printf("Using port from command-line flag: %d", *portFlag)
+		config.Port = *portFlag
+	} else if portStr := os.Getenv("S3POP_PORT"); portStr != "" {
 		if p, err := strconv.Atoi(portStr); err == nil && p > 0 && p <= 65535 {
 			log.Printf("Using S3POP_PORT from environment: %d", p)
 			config.Port = p
