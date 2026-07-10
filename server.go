@@ -28,6 +28,10 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"os/signal"
+	"sync"
+	"syscall"
+	"time"
 
 	"log"
 	"net"
@@ -54,6 +58,7 @@ type ServerConfig struct {
 	S3Bucket         string                   `json:"s3Bucket"`
 	S3Endpoint       backend.S3Endpoint       `json:"s3Endpoint"`
 	S3ForcePathStyle backend.S3ForcePathStyle `json:"s3ForcePathStyle"`
+	ShutdownTimeout  int                      `json:"shutdownTimeout"` // in seconds
 }
 
 var (
@@ -84,17 +89,51 @@ func main() {
 	if err != nil {
 		log.Fatalf("Error.. %s", err.Error())
 	}
+
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
 	log.Println("Server started.")
 	log.Println("Listening on port: " + strconv.Itoa(config.Port))
+
+	var wg sync.WaitGroup
+
+	go func() {
+		<-ctx.Done()
+		log.Println("Shutdown signal received. Shutting down gracefully...")
+		_ = listener.Close()
+	}()
+
 	for {
 		conn, err := listener.Accept()
 		if err != nil {
+			if errors.Is(err, net.ErrClosed) {
+				break
+			}
+			log.Printf("Accept error: %v", err)
 			continue
 		}
 		// run as goroutine
-		go handleClient(conn, config)
+		wg.Add(1)
+		go func(c net.Conn, cfg *ServerConfig) {
+			defer wg.Done()
+			handleClient(c, cfg)
+		}(conn, config)
 	}
 
+	log.Println("Waiting for active connections to finish...")
+	shutdownDone := make(chan struct{})
+	go func() {
+		wg.Wait()
+		close(shutdownDone)
+	}()
+
+	select {
+	case <-shutdownDone:
+	case <-time.After(time.Duration(config.ShutdownTimeout) * time.Second):
+		log.Println("Shutdown timed out. Forcing exit.")
+	}
+	log.Println("Server stopped.")
 }
 
 func loadConfig(configFlag *string, portFlag *int) (config *ServerConfig) {
@@ -117,6 +156,7 @@ func loadConfig(configFlag *string, portFlag *int) (config *ServerConfig) {
 
 	config = new(ServerConfig)
 	config.Port = defaultport
+	config.ShutdownTimeout = 30 // default 30 seconds
 
 	jsonData, err := os.ReadFile(configFilename)
 	if err == nil {
@@ -167,6 +207,14 @@ func loadConfig(configFlag *string, portFlag *int) (config *ServerConfig) {
 			log.Fatalf("Invalid S3POP_S3_FORCE_PATH_STYLE: %v", err)
 		}
 		config.S3ForcePathStyle = backend.S3ForcePathStyle(&b)
+	}
+	if timeout := os.Getenv("S3POP_SHUTDOWN_TIMEOUT"); timeout != "" {
+		if t, err := strconv.Atoi(timeout); err == nil && t > 0 {
+			log.Printf("Using S3POP_SHUTDOWN_TIMEOUT from environment: %d", t)
+			config.ShutdownTimeout = t
+		} else {
+			log.Fatalf("Invalid S3POP_SHUTDOWN_TIMEOUT: %s (must be a positive integer in seconds)", timeout)
+		}
 	}
 
 	if config.Port <= 0 || config.Port > 65535 {
