@@ -58,6 +58,7 @@ type ServerConfig struct {
 	S3Bucket         string                   `json:"s3Bucket"`
 	S3Endpoint       backend.S3Endpoint       `json:"s3Endpoint"`
 	S3ForcePathStyle backend.S3ForcePathStyle `json:"s3ForcePathStyle"`
+	ShutdownTimeout  int                      `json:"shutdownTimeout"` // in seconds
 }
 
 var (
@@ -129,7 +130,7 @@ func main() {
 
 	select {
 	case <-shutdownDone:
-	case <-time.After(30 * time.Second):
+	case <-time.After(time.Duration(config.ShutdownTimeout) * time.Second):
 		log.Println("Shutdown timed out. Forcing exit.")
 	}
 	log.Println("Server stopped.")
@@ -155,6 +156,7 @@ func loadConfig(configFlag *string, portFlag *int) (config *ServerConfig) {
 
 	config = new(ServerConfig)
 	config.Port = defaultport
+	config.ShutdownTimeout = 30 // default 30 seconds
 
 	jsonData, err := os.ReadFile(configFilename)
 	if err == nil {
@@ -205,6 +207,14 @@ func loadConfig(configFlag *string, portFlag *int) (config *ServerConfig) {
 			log.Fatalf("Invalid S3POP_S3_FORCE_PATH_STYLE: %v", err)
 		}
 		config.S3ForcePathStyle = backend.S3ForcePathStyle(&b)
+	}
+	if timeout := os.Getenv("S3POP_SHUTDOWN_TIMEOUT"); timeout != "" {
+		if t, err := strconv.Atoi(timeout); err == nil && t > 0 {
+			log.Printf("Using S3POP_SHUTDOWN_TIMEOUT from environment: %d", t)
+			config.ShutdownTimeout = t
+		} else {
+			log.Fatalf("Invalid S3POP_SHUTDOWN_TIMEOUT: %s (must be a positive integer in seconds)", timeout)
+		}
 	}
 
 	if config.Port <= 0 || config.Port > 65535 {
