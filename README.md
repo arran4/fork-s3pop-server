@@ -42,6 +42,12 @@ At present the instructions assume some familiarity with AWS usage and configuri
  - If you are using an S3-compatible service like Cloudflare R2, you can also set `s3Endpoint` to your custom endpoint URL and `s3ForcePathStyle` to true if required.
  - Optionally set the program to start when your os starts
 
+You can also run the program passing command line arguments for the configuration and port which overrides both configuration file and environment variables.
+```bash
+./s3pop-server -config path/to/my/server-config.json -port 110
+```
+Use `./s3pop-server --help` to see all available command line arguments.
+
 ### Docker
 Alternatively, you can use the official Docker image. You can pull the latest image with:
 ```bash

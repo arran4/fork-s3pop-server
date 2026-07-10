@@ -23,6 +23,7 @@ package main
 import (
 	"bufio"
 	"context"
+	_ "embed"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -61,13 +62,20 @@ var (
 	date    = "unknown"
 )
 
-func main() {
-	log.Printf("Starting S3 POP3 Server version: %s, commit: %s, date: %s", version, commit, date)
+//go:embed usage.tmpl
+var usageTmpl string
 
+func main() {
 	configFlag := flag.String("config", "", "Path to the configuration file")
 	portFlag := flag.Int("port", 0, "Port to listen on (overrides config file and environment variables)")
 
+	flag.Usage = func() {
+		fmt.Print(usageTmpl)
+	}
+
 	flag.Parse()
+
+	log.Printf("Starting S3 POP3 Server version: %s, commit: %s, date: %s", version, commit, date)
 
 	config := loadConfig(configFlag, portFlag)
 
