@@ -155,7 +155,7 @@ func loadConfig() (config *ServerConfig) {
 
 func handleClient(conn net.Conn, config *ServerConfig) {
 	defer func() {
-		if err := conn.Close(); err != nil {
+		if err := conn.Close(); err != nil && !errors.Is(err, net.ErrClosed) {
 			log.Printf("Error closing connection: %v\n", err)
 		}
 	}()
