@@ -62,6 +62,17 @@ type ServerConfig struct {
 	ShutdownTimeout  int                      `json:"shutdownTimeout"` // in seconds
 }
 
+type pop3Session struct {
+	conn         net.Conn
+	sessionLog   *log.Logger
+	config       *ServerConfig
+	state        int
+	emailDir     string
+	emailBucket  string
+	deletedItems map[int]struct{}
+	mailData     []*mailutils.MailData
+}
+
 var (
 	version = "dev"
 	commit  = "none"
@@ -246,11 +257,14 @@ func handleClient(conn net.Conn, config *ServerConfig) {
 		}
 	}()
 
-	var state = stateUnauthorized
-	var emailDir string
-	var emailBucket = config.S3Bucket
-	var deletedItems map[int]struct{}
-	var mailData []*mailutils.MailData
+	sess := &pop3Session{
+		conn:        conn,
+		sessionLog:  sessionLog,
+		config:      config,
+		state:       stateUnauthorized,
+		emailBucket: config.S3Bucket,
+	}
+
 	reader := bufio.NewReader(conn)
 
 	_, _ = fmt.Fprintf(conn, "+OK S3 POP3 server: powered by Go"+eol)
@@ -274,245 +288,313 @@ func handleClient(conn net.Conn, config *ServerConfig) {
 			}
 			sessionLog.Printf("Argument %d: %s", i, arg)
 		}
-		if cmd == "USER" && state == stateUnauthorized {
-			//User name is name of folder in bucket in S3
-			userName, err := getSafeArg(args, 0)
-			if nil != err {
-				writeErrResponse(conn, "No user name", false)
-				continue
-			}
-			emailDir, err = mailutils.GetEmailDir(userName)
-			if err != nil {
-				sessionLog.Printf("Error getting email directory: %v", err)
-				writeErrResponse(conn, "Could not access user directory", false)
-				continue
-			}
-			err = backend.DownloadEmails(
-				context.TODO(),
-				emailBucket,
-				userName,
-				config.S3Endpoint,
-				config.S3ForcePathStyle,
-			)
-			if nil != err {
-				writeErrResponse(conn, "Could not download emails: %s", false, err)
-				continue
-			}
-			mailData, err = getMessageData(emailDir)
-			if err != nil {
-				sessionLog.Printf("Error getting message data: %v", err)
-				writeErrResponse(conn, "Could not access message data", false)
-				continue
-			}
-			writeOKResponse(conn, "", true)
 
-		} else if cmd == "PASS" && state == stateUnauthorized {
-			//Accept all passwords (local servoce only)
-			writeOKResponse(conn, "User signed in", true)
-			deletedItems = make(map[int]struct{})
-			state = stateTransaction
-
-		} else if cmd == "STAT" && state == stateTransaction {
-			count, size := getStat(mailData, deletedItems)
-			writeOKResponse(conn, strconv.Itoa(count)+" "+strconv.Itoa(size), true)
-
-		} else if cmd == "LIST" && state == stateTransaction {
-			msgID, err := getSafeArg(args, 0)
-			if err == nil {
-				var id int
-				id, _ = strconv.Atoi(msgID)
-				id--
-				if id < 0 || len(mailData) <= id {
-					writeErrResponse(conn, "no such message", false)
-					continue
-				}
-				if _, toDel := deletedItems[id]; toDel {
-					writeErrResponse(conn, "message deleted", false)
-					continue
-				}
-				writeOKResponse(conn, "%d %d", false, id+1, mailData[id].TotalSize)
-			} else {
-				count, size := getStat(mailData, deletedItems)
-				writeOKResponse(conn, "%d messages (%d octets)", false, count, size)
-
-				for itemID, mailItem := range mailData {
-					if _, toDel := deletedItems[itemID]; toDel {
-						continue
-					}
-					_, _ = fmt.Fprintf(conn, "%d %d\r\n", itemID+1, mailItem.TotalSize)
-				}
-				_, _ = fmt.Fprint(conn, multilineTerminator)
+		switch cmd {
+		case "USER":
+			sess.handleUSER(args)
+		case "PASS":
+			sess.handlePASS(args)
+		case "STAT":
+			sess.handleSTAT(args)
+		case "LIST":
+			sess.handleLIST(args)
+		case "UIDL":
+			sess.handleUIDL(args)
+		case "TOP":
+			sess.handleTOP(args)
+		case "RETR":
+			sess.handleRETR(args)
+		case "DELE":
+			sess.handleDELE(args)
+		case "RSET":
+			sess.handleRSET(args)
+		case "NOOP":
+			sess.handleNOOP(args)
+		case "QUIT":
+			if sess.handleQUIT(args) {
+				return
 			}
-
-		} else if cmd == "UIDL" && state == stateTransaction {
-
-			msgID, err := getSafeArg(args, 0)
-			var id int
-
-			if err == nil {
-				id, _ = strconv.Atoi(msgID)
-				id--
-				if id < 0 || len(mailData) <= id {
-					writeErrResponse(conn, "no such message", false)
-					continue
-				}
-				if _, toDel := deletedItems[id]; toDel {
-					writeErrResponse(conn, "message deleted", false)
-					continue
-				}
-				writeOKResponse(conn, "%d %s", false, id+1, mailData[id].Name)
-			} else {
-				writeOKResponse(conn, "", false)
-
-				for id, mailItem := range mailData {
-					if _, toDel := deletedItems[id]; toDel {
-						continue
-					}
-					_, _ = fmt.Fprintf(conn, "%d %s\r\n", id+1, mailItem.Name)
-				}
-				_, _ = fmt.Fprint(conn, multilineTerminator)
-			}
-
-		} else if cmd == "TOP" && state == stateTransaction {
-			msgID, err := getSafeArg(args, 0)
-			var id int
-
-			if err == nil {
-				id, _ = strconv.Atoi(msgID)
-				id--
-				if id < 0 || len(mailData) <= id {
-					writeErrResponse(conn, "no such message", false)
-					continue
-				}
-				if _, toDel := deletedItems[id]; toDel {
-					writeErrResponse(conn, "message deleted", false)
-					continue
-				}
-			} else {
-				writeErrResponse(conn, "no message selected", false)
-				continue
-			}
-			lineArg, err := getSafeArg(args, 1)
-			var lines int
-			if nil != err {
-				writeErrResponse(conn, "no line argument supplied", false)
-				continue
-			}
-			lines, _ = strconv.Atoi(lineArg)
-
-			fullFilePath := filepath.Join(emailDir, mailData[id].Name)
-			fileData, err := os.Open(fullFilePath)
-			if err != nil {
-				writeErrResponse(conn, "failed to open email %s", false, mailData[id].Name)
-				continue
-			}
-			writeOKResponse(conn, "%d octets", false, mailData[id].TotalSize)
-			bodyLinesRead := 0
-			inBody := false
-			fileScanner := bufio.NewScanner(fileData)
-			for fileScanner.Scan() {
-				line := fileScanner.Text()
-				if line == "" && !inBody {
-					_, _ = fmt.Fprint(conn, line+eol)
-					inBody = true
-				} else if line == "." {
-					_, _ = fmt.Fprint(conn, eol+line+eol)
-				} else {
-					if inBody {
-						bodyLinesRead++
-						if bodyLinesRead > lines {
-							break
-						}
-					}
-					_, _ = fmt.Fprint(conn, line+eol)
-				}
-
-			}
-			if err := fileScanner.Err(); err != nil {
-				sessionLog.Printf("Error reading email file: %v", err)
-			}
-			_, _ = fmt.Fprint(conn, multilineTerminator)
-			if err := fileData.Close(); err != nil && !errors.Is(err, os.ErrClosed) {
-				sessionLog.Printf("Error closing file: %v\n", err)
-			}
-
-		} else if cmd == "RETR" && state == stateTransaction {
-			msgID, err := getSafeArg(args, 0)
-			var id int
-			if err == nil {
-				id, _ = strconv.Atoi(msgID)
-				id--
-				if id < 0 || len(mailData) <= id {
-					writeErrResponse(conn, "no such message", false)
-					continue
-				}
-				if _, toDel := deletedItems[id]; toDel {
-					writeErrResponse(conn, "message deleted", false)
-					continue
-				}
-			} else {
-				writeErrResponse(conn, "no message selected", false)
-				continue
-			}
-
-			fullFilePath := filepath.Join(emailDir, mailData[id].Name)
-			fileData, err := os.Open(fullFilePath)
-			if err != nil {
-				writeErrResponse(conn, "failed to open email %s", false, mailData[id].Name)
-				continue
-			}
-			writeOKResponse(conn, "%d octets", false, mailData[id].TotalSize)
-
-			fileScanner := bufio.NewScanner(fileData)
-			for fileScanner.Scan() {
-				line := fileScanner.Text()
-				if line == "." {
-					_, _ = fmt.Fprint(conn, eol+line+eol)
-				} else {
-					_, _ = fmt.Fprint(conn, line+eol)
-				}
-
-			}
-			if err := fileScanner.Err(); err != nil {
-				sessionLog.Printf("Error reading email file: %v", err)
-			}
-			_, _ = fmt.Fprint(conn, multilineTerminator)
-			if err := fileData.Close(); err != nil && !errors.Is(err, os.ErrClosed) {
-				sessionLog.Printf("Error closing file: %v\n", err)
-			}
-
-		} else if cmd == "DELE" && state == stateTransaction {
-			msgID, err := getSafeArg(args, 0)
-			var id int
-			if err == nil {
-				id, _ = strconv.Atoi(msgID)
-				id--
-				if id < 0 || len(mailData) <= id {
-					writeErrResponse(conn, "no such message", false)
-					continue
-				}
-				if _, toDel := deletedItems[id]; toDel {
-					writeErrResponse(conn, "message already deleted", false)
-					continue
-				}
-			} else {
-				writeErrResponse(conn, "no message selected", false)
-				continue
-			}
-			deletedItems[id] = struct{}{}
-			_, _ = fmt.Fprintf(conn, "+OK"+eol)
-		} else if cmd == "RSET" {
-			deletedItems = make(map[int]struct{})
-			writeOKResponse(conn, "", false)
-		} else if cmd == "NOOP" {
-			writeOKResponse(conn, "", false)
-		} else if cmd == "QUIT" {
-			if state == stateTransaction {
-				deleteItems(emailDir, mailData, deletedItems)
-			}
-			return
-		} else {
+		default:
 			writeErrResponse(conn, "Unrecognised Command", true)
 		}
 	}
+}
+
+func (s *pop3Session) handleUSER(args []string) {
+	if s.state != stateUnauthorized {
+		writeErrResponse(s.conn, "Command not valid in this state", false)
+		return
+	}
+	userName, err := getSafeArg(args, 0)
+	if err != nil {
+		writeErrResponse(s.conn, "No user name", false)
+		return
+	}
+	s.emailDir, err = mailutils.GetEmailDir(userName)
+	if err != nil {
+		s.sessionLog.Printf("Error getting email directory: %v", err)
+		writeErrResponse(s.conn, "Could not access user directory", false)
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Minute)
+	defer cancel()
+	err = backend.DownloadEmails(
+		ctx,
+		s.emailBucket,
+		userName,
+		s.config.S3Endpoint,
+		s.config.S3ForcePathStyle,
+	)
+	if err != nil {
+		writeErrResponse(s.conn, "Could not download emails: %s", false, err)
+		return
+	}
+	s.mailData, err = getMessageData(s.emailDir)
+	if err != nil {
+		s.sessionLog.Printf("Error getting message data: %v", err)
+		writeErrResponse(s.conn, "Could not access message data", false)
+		return
+	}
+	writeOKResponse(s.conn, "", true)
+}
+
+func (s *pop3Session) handlePASS(args []string) {
+	if s.state != stateUnauthorized {
+		writeErrResponse(s.conn, "Command not valid in this state", false)
+		return
+	}
+	writeOKResponse(s.conn, "User signed in", true)
+	s.deletedItems = make(map[int]struct{})
+	s.state = stateTransaction
+}
+
+func (s *pop3Session) handleSTAT(args []string) {
+	if s.state != stateTransaction {
+		writeErrResponse(s.conn, "Command not valid in this state", false)
+		return
+	}
+	count, size := getStat(s.mailData, s.deletedItems)
+	writeOKResponse(s.conn, strconv.Itoa(count)+" "+strconv.Itoa(size), true)
+}
+
+func (s *pop3Session) handleLIST(args []string) {
+	if s.state != stateTransaction {
+		writeErrResponse(s.conn, "Command not valid in this state", false)
+		return
+	}
+	msgID, err := getSafeArg(args, 0)
+	if err == nil {
+		id, _ := strconv.Atoi(msgID)
+		id--
+		if id < 0 || len(s.mailData) <= id {
+			writeErrResponse(s.conn, "no such message", false)
+			return
+		}
+		if _, toDel := s.deletedItems[id]; toDel {
+			writeErrResponse(s.conn, "message deleted", false)
+			return
+		}
+		writeOKResponse(s.conn, "%d %d", false, id+1, s.mailData[id].TotalSize)
+	} else {
+		count, size := getStat(s.mailData, s.deletedItems)
+		writeOKResponse(s.conn, "%d messages (%d octets)", false, count, size)
+
+		for itemID, mailItem := range s.mailData {
+			if _, toDel := s.deletedItems[itemID]; toDel {
+				continue
+			}
+			_, _ = fmt.Fprintf(s.conn, "%d %d\r\n", itemID+1, mailItem.TotalSize)
+		}
+		_, _ = fmt.Fprint(s.conn, multilineTerminator)
+	}
+}
+
+func (s *pop3Session) handleUIDL(args []string) {
+	if s.state != stateTransaction {
+		writeErrResponse(s.conn, "Command not valid in this state", false)
+		return
+	}
+	msgID, err := getSafeArg(args, 0)
+	if err == nil {
+		id, _ := strconv.Atoi(msgID)
+		id--
+		if id < 0 || len(s.mailData) <= id {
+			writeErrResponse(s.conn, "no such message", false)
+			return
+		}
+		if _, toDel := s.deletedItems[id]; toDel {
+			writeErrResponse(s.conn, "message deleted", false)
+			return
+		}
+		writeOKResponse(s.conn, "%d %s", false, id+1, s.mailData[id].Name)
+	} else {
+		writeOKResponse(s.conn, "", false)
+
+		for id, mailItem := range s.mailData {
+			if _, toDel := s.deletedItems[id]; toDel {
+				continue
+			}
+			_, _ = fmt.Fprintf(s.conn, "%d %s\r\n", id+1, mailItem.Name)
+		}
+		_, _ = fmt.Fprint(s.conn, multilineTerminator)
+	}
+}
+
+func (s *pop3Session) handleTOP(args []string) {
+	if s.state != stateTransaction {
+		writeErrResponse(s.conn, "Command not valid in this state", false)
+		return
+	}
+	msgID, err := getSafeArg(args, 0)
+	if err != nil {
+		writeErrResponse(s.conn, "no message selected", false)
+		return
+	}
+	id, _ := strconv.Atoi(msgID)
+	id--
+	if id < 0 || len(s.mailData) <= id {
+		writeErrResponse(s.conn, "no such message", false)
+		return
+	}
+	if _, toDel := s.deletedItems[id]; toDel {
+		writeErrResponse(s.conn, "message deleted", false)
+		return
+	}
+
+	lineArg, err := getSafeArg(args, 1)
+	if err != nil {
+		writeErrResponse(s.conn, "no line argument supplied", false)
+		return
+	}
+	lines, err := strconv.Atoi(lineArg)
+	if err != nil || lines < 0 {
+		writeErrResponse(s.conn, "invalid line count", false)
+		return
+	}
+
+	fullFilePath := filepath.Join(s.emailDir, s.mailData[id].Name)
+	fileData, err := os.Open(fullFilePath)
+	if err != nil {
+		writeErrResponse(s.conn, "failed to open email %s", false, s.mailData[id].Name)
+		return
+	}
+	defer func() {
+		if err := fileData.Close(); err != nil && !errors.Is(err, os.ErrClosed) {
+			s.sessionLog.Printf("Error closing file: %v\n", err)
+		}
+	}()
+	writeOKResponse(s.conn, "%d octets", false, s.mailData[id].TotalSize)
+	bodyLinesRead := 0
+	inBody := false
+	fileScanner := bufio.NewScanner(fileData)
+	for fileScanner.Scan() {
+		line := fileScanner.Text()
+		if line == "" && !inBody {
+			_, _ = fmt.Fprint(s.conn, line+eol)
+			inBody = true
+		} else if line == "." {
+			_, _ = fmt.Fprint(s.conn, eol+line+eol)
+		} else {
+			if inBody {
+				bodyLinesRead++
+				if bodyLinesRead > lines {
+					break
+				}
+			}
+			_, _ = fmt.Fprint(s.conn, line+eol)
+		}
+	}
+	if err := fileScanner.Err(); err != nil {
+		s.sessionLog.Printf("Error reading email file: %v", err)
+	}
+	_, _ = fmt.Fprint(s.conn, multilineTerminator)
+}
+
+func (s *pop3Session) handleRETR(args []string) {
+	if s.state != stateTransaction {
+		writeErrResponse(s.conn, "Command not valid in this state", false)
+		return
+	}
+	msgID, err := getSafeArg(args, 0)
+	if err != nil {
+		writeErrResponse(s.conn, "no message selected", false)
+		return
+	}
+	id, _ := strconv.Atoi(msgID)
+	id--
+	if id < 0 || len(s.mailData) <= id {
+		writeErrResponse(s.conn, "no such message", false)
+		return
+	}
+	if _, toDel := s.deletedItems[id]; toDel {
+		writeErrResponse(s.conn, "message deleted", false)
+		return
+	}
+
+	fullFilePath := filepath.Join(s.emailDir, s.mailData[id].Name)
+	fileData, err := os.Open(fullFilePath)
+	if err != nil {
+		writeErrResponse(s.conn, "failed to open email %s", false, s.mailData[id].Name)
+		return
+	}
+	defer func() {
+		if err := fileData.Close(); err != nil && !errors.Is(err, os.ErrClosed) {
+			s.sessionLog.Printf("Error closing file: %v\n", err)
+		}
+	}()
+	writeOKResponse(s.conn, "%d octets", false, s.mailData[id].TotalSize)
+
+	fileScanner := bufio.NewScanner(fileData)
+	for fileScanner.Scan() {
+		line := fileScanner.Text()
+		if line == "." {
+			_, _ = fmt.Fprint(s.conn, eol+line+eol)
+		} else {
+			_, _ = fmt.Fprint(s.conn, line+eol)
+		}
+	}
+	if err := fileScanner.Err(); err != nil {
+		s.sessionLog.Printf("Error reading email file: %v", err)
+	}
+	_, _ = fmt.Fprint(s.conn, multilineTerminator)
+}
+
+func (s *pop3Session) handleDELE(args []string) {
+	if s.state != stateTransaction {
+		writeErrResponse(s.conn, "Command not valid in this state", false)
+		return
+	}
+	msgID, err := getSafeArg(args, 0)
+	if err != nil {
+		writeErrResponse(s.conn, "no message selected", false)
+		return
+	}
+	id, _ := strconv.Atoi(msgID)
+	id--
+	if id < 0 || len(s.mailData) <= id {
+		writeErrResponse(s.conn, "no such message", false)
+		return
+	}
+	if _, toDel := s.deletedItems[id]; toDel {
+		writeErrResponse(s.conn, "message already deleted", false)
+		return
+	}
+	s.deletedItems[id] = struct{}{}
+	_, _ = fmt.Fprintf(s.conn, "+OK"+eol)
+}
+
+func (s *pop3Session) handleRSET(args []string) {
+	s.deletedItems = make(map[int]struct{})
+	writeOKResponse(s.conn, "", false)
+}
+
+func (s *pop3Session) handleNOOP(args []string) {
+	writeOKResponse(s.conn, "", false)
+}
+
+func (s *pop3Session) handleQUIT(args []string) bool {
+	if s.state == stateTransaction {
+		deleteItems(s.emailDir, s.mailData, s.deletedItems)
+	}
+	return true // Signal to close connection
 }
