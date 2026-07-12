@@ -478,11 +478,7 @@ func (s *pop3Session) handleTOP(args []string) {
 		writeErrResponse(s.conn, "failed to open email %s", false, s.mailData[id].Name)
 		return
 	}
-	defer func() {
-		if err := fileData.Close(); err != nil && !errors.Is(err, os.ErrClosed) {
-			s.sessionLog.Printf("Error closing file: %v\n", err)
-		}
-	}()
+	defer fileData.Close()
 	writeOKResponse(s.conn, "%d octets", false, s.mailData[id].TotalSize)
 	bodyLinesRead := 0
 	inBody := false
@@ -537,11 +533,7 @@ func (s *pop3Session) handleRETR(args []string) {
 		writeErrResponse(s.conn, "failed to open email %s", false, s.mailData[id].Name)
 		return
 	}
-	defer func() {
-		if err := fileData.Close(); err != nil && !errors.Is(err, os.ErrClosed) {
-			s.sessionLog.Printf("Error closing file: %v\n", err)
-		}
-	}()
+	defer fileData.Close()
 	writeOKResponse(s.conn, "%d octets", false, s.mailData[id].TotalSize)
 
 	fileScanner := bufio.NewScanner(fileData)
