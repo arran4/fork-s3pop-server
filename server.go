@@ -336,8 +336,10 @@ func (s *pop3Session) handleUSER(args []string) {
 		writeErrResponse(s.conn, "Could not access user directory", false)
 		return
 	}
+	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Minute)
+	defer cancel()
 	err = backend.DownloadEmails(
-		context.TODO(),
+		ctx,
 		s.emailBucket,
 		userName,
 		s.config.S3Endpoint,
@@ -464,7 +466,11 @@ func (s *pop3Session) handleTOP(args []string) {
 		writeErrResponse(s.conn, "no line argument supplied", false)
 		return
 	}
-	lines, _ := strconv.Atoi(lineArg)
+	lines, err := strconv.Atoi(lineArg)
+	if err != nil || lines < 0 {
+		writeErrResponse(s.conn, "invalid line count", false)
+		return
+	}
 
 	fullFilePath := filepath.Join(s.emailDir, s.mailData[id].Name)
 	fileData, err := os.Open(fullFilePath)
@@ -472,6 +478,7 @@ func (s *pop3Session) handleTOP(args []string) {
 		writeErrResponse(s.conn, "failed to open email %s", false, s.mailData[id].Name)
 		return
 	}
+	defer fileData.Close()
 	writeOKResponse(s.conn, "%d octets", false, s.mailData[id].TotalSize)
 	bodyLinesRead := 0
 	inBody := false
@@ -497,9 +504,6 @@ func (s *pop3Session) handleTOP(args []string) {
 		s.sessionLog.Printf("Error reading email file: %v", err)
 	}
 	_, _ = fmt.Fprint(s.conn, multilineTerminator)
-	if err := fileData.Close(); err != nil && !errors.Is(err, os.ErrClosed) {
-		s.sessionLog.Printf("Error closing file: %v\n", err)
-	}
 }
 
 func (s *pop3Session) handleRETR(args []string) {
@@ -529,6 +533,7 @@ func (s *pop3Session) handleRETR(args []string) {
 		writeErrResponse(s.conn, "failed to open email %s", false, s.mailData[id].Name)
 		return
 	}
+	defer fileData.Close()
 	writeOKResponse(s.conn, "%d octets", false, s.mailData[id].TotalSize)
 
 	fileScanner := bufio.NewScanner(fileData)
@@ -544,9 +549,6 @@ func (s *pop3Session) handleRETR(args []string) {
 		s.sessionLog.Printf("Error reading email file: %v", err)
 	}
 	_, _ = fmt.Fprint(s.conn, multilineTerminator)
-	if err := fileData.Close(); err != nil && !errors.Is(err, os.ErrClosed) {
-		s.sessionLog.Printf("Error closing file: %v\n", err)
-	}
 }
 
 func (s *pop3Session) handleDELE(args []string) {

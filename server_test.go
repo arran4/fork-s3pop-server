@@ -54,10 +54,18 @@ func readMultilineResponse(t *testing.T, conn net.Conn) string {
 	buf := make([]byte, 1024)
 	for {
 		n, err := conn.Read(buf)
-		if err != nil && err != io.EOF {
+		if n > 0 {
+			result += string(buf[:n])
+		}
+		if err != nil {
+			if err == io.EOF {
+				if len(result) >= 3 && result[len(result)-3:] == ".\r\n" {
+					break
+				}
+				t.Fatalf("Unexpected EOF before multiline terminator; read so far: %q", result)
+			}
 			t.Fatalf("Failed to read from conn: %v", err)
 		}
-		result += string(buf[:n])
 		if len(result) >= 3 && result[len(result)-3:] == ".\r\n" {
 			break
 		}
