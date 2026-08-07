@@ -136,7 +136,6 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       release_tag: ${{ steps.tag.outputs.release_tag }}
-      next_version: ${{ steps.tag.outputs.next_version }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -213,9 +212,6 @@ jobs:
           fi
 
           echo "release_tag=$next_tag" >> "$GITHUB_OUTPUT"
-          clean_tag="${next_tag#v}"; clean_tag="${clean_tag%%-*}"
-          IFS='.' read -r maj min pat <<< "$clean_tag"
-          echo "next_version=${maj:-0}.${min:-0}.$(( ${pat:-0} + 1 ))-SNAPSHOT" >> "$GITHUB_OUTPUT"
 
   gitleaks:
     name: Secret scan
@@ -435,28 +431,3 @@ jobs:
     steps:
       - name: Release promoted via upstream process
         run: echo "Promotion step placeholder (gh api patch release draft=false)"
-
-  prepare-next-version-pr:
-    name: Prepare next development iteration PR
-    needs: [publish-draft, prepare-release-tag]
-    if: ${{ github.event_name == 'workflow_dispatch' && (startsWith(inputs.mode, 'release-') || inputs.mode == 'release-test') }}
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Bump to next version and open PR
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          set -euo pipefail
-          NEXT_VERSION="${{ needs.prepare-release-tag.outputs.next_version || '' }}"
-          [[ -z "$NEXT_VERSION" ]] && { echo "No next version calculated; skipping."; exit 0; }
-
-          BRANCH="bump-version-$NEXT_VERSION"
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git checkout -b "$BRANCH"
-
-          git add -A
-          git commit --allow-empty -m "Prepare next development iteration $NEXT_VERSION"
-          git push -f -u origin "$BRANCH"
-          gh pr create --title "Prepare next development iteration $NEXT_VERSION" --body "Automated PR for next iteration." --base "${{ github.ref_name }}" --head "$BRANCH" || echo "PR already exists"
