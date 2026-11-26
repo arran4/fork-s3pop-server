@@ -16,43 +16,36 @@ You can contact me by email  on fractal dot mango at gmail dot com if you have q
 
 If you want someone to set this up for you I am happy to do so for a small fee.
 
-## Solution Details
-You will need
- - An AWS Account (aws.amazon.com)
- - Your own registered domain. This can be with AWS or another provider, though it will be easier if you use AWS name servers (even if your registrar is someone else). I recommend [VentraIP] (https://ventraip.com.au) for getting a domain if you are in Australia.
+## Setup
 
-In these instructions I will assume you have setup an AWS account and purchased a domain from the registrar of your choice. There are several steps to implementing this solution. Initial setup is a little complex however once it is setup you will have a cheap and easily maintainable solution.
+Choose a receiving provider and follow the [complete receiving and storage guide](docs/receiving-email.md), which includes:
 
-At present the instructions assume some familiarity with AWS usage and configuring email clients. Expanding the documentation is one of the current todo items for this project.
-### Server Configuration
-#### Bucket configuration
- - Create an s3 bucket for storing your emails something like mail.mydomainname.com is a good thing to name it.
- - Create an IAM Role using AmazonS3ReadOnlyAccess (edit to be specific to your mail bucket for extra security).
- - Create a new IAM user with Access Key and Secret key that uses your new role.
- - Put these new credentials in your credentials file in the .aws folder in your home directory. Set you aws-region in your config file in this same directory to be the same as your bucket region (ap-southeast-2 if you are in Sydney)
- #### DNS Setup (Optional, only if you are using route53 for DNS)
-  - Set up your domain to use AWS nameservers if it does not already-  
- #### Email Sending (SMTP Setup)
- - Email sending is handled outside of this server by your chosen provider (e.g., AWS SES, Mailgun, SendGrid, etc.). Configure your email client to use their SMTP settings.
- #### Email Receiving (Server Setup)
- - Set up a rule set to deliver emails sent to your desired email address to your s3 bucket.
- #### POP3 Server Config
- - Download the zip in releases and unzip into a directory you want to keep it
- - Edit your server-config.json (in the root directory of your install), set the bucket name to the name of your bucket. Note the port (or choose your own) for use in configuring your client.
- - If you are using an S3-compatible service like Cloudflare R2, you can also set `s3Endpoint` to your custom endpoint URL and `s3ForcePathStyle` to true if required.
- - Optionally set the program to start when your os starts
+- AWS SES to S3 delivery, DNS and receipt rules, with separate least-privilege IAM examples for the SES writer and POP3 reader.
+- Cloudflare Email Routing to an Email Worker to R2, including an example Worker, R2 binding and read-only API token setup.
+- The mailbox prefix and raw MIME object layout, stable filenames, deduplication, local state and migration requirements.
+- Native AWS and R2 configuration, limitations and a test procedure.
 
-You can also run the program passing command line arguments for the configuration and port which overrides both configuration file and environment variables.
+**Security:** This server listens on all interfaces, does not validate POP3 passwords or implement TLS, and does not authorize mailbox usernames. It logs POP3 command arguments. Restrict native deployments with a firewall and publish container ports only on loopback. Do not use real passwords, expose this service to untrusted clients or treat mailbox prefixes as an authorization boundary.
+
+Download a release, copy `server-config.json.example` to `server-config.json`, and configure it for your chosen provider using the guide (remove the R2 endpoint and path-style settings for standard AWS S3). Start the server:
+
 ```bash
-./s3pop-server -config path/to/my/server-config.json -port 110
+./s3pop-server -config server-config.json -port 5110
 ```
-Use `./s3pop-server --help` to see all available command line arguments.
+
+Use `./s3pop-server --help` for the available command-line arguments. The configuration path and port can be overridden from the command line; environment variables override the applicable JSON fields. The backend also requires the OS account's `~/.aws/config` file to exist, even with environment credentials. Preserve `~/.email` between runs.
 
 ### Docker
-Alternatively, you can use the official Docker image. You can pull the latest image with:
+Alternatively, you can use the Docker image. You can pull the latest image with:
 ```bash
 docker pull ghcr.io/arran4/s3pop-server:latest
 ```
+
+Before using any of the following Docker or Compose examples, create a file named `aws-config` beside your command/Compose file containing `[default]` and `region = us-east-1` (AWS; substitute your region) or `region = auto` (R2). The image runs as the non-root `s3pop` user with home and working directory `/home/s3pop`. The config file must be mounted at `/home/s3pop/.aws/config`, even when credentials and region are provided via environment variables.
+
+Create a persistent directory named `s3pop-state` for the local spool and index. Ensure it is writable by the container user, and that configuration/credential files are readable by that user but not exposed to other users. Use `docker run --rm --entrypoint id ghcr.io/arran4/s3pop-server:latest` to identify its UID/GID (account for user namespace mappings if applicable). Each independent deployment needs its own state directory. Back it up; removing it can cause previously downloaded remote messages to reappear.
+
+All examples below publish only on loopback because the service lacks authentication and TLS. Prefer the credentials-file examples over placing credentials in environment variables.
 
 Configuration can be passed via environment variables instead of (or overriding) the JSON configuration file:
 
@@ -62,13 +55,15 @@ Configuration can be passed via environment variables instead of (or overriding)
 | `S3POP_S3_BUCKET` | The name of the S3 bucket to read emails from. | `my-email-bucket` |
 | `S3POP_S3_ENDPOINT` | Custom S3 endpoint URL (e.g. for Cloudflare R2). | `https://account-id.r2.cloudflarestorage.com` |
 | `S3POP_S3_FORCE_PATH_STYLE` | Force path style URLs for S3 operations (`true`/`false`). | `true` |
-| `S3POP_CONFIG` | Path to a custom JSON configuration file (defaults to `/etc/s3pop/server-config.json` in Docker if not overridden, or `./server-config.json` locally). | `/etc/s3pop3/server-config.json` |
+| `S3POP_CONFIG` | Path to a custom JSON configuration file (defaults to `./server-config.json` in the working directory (`/home/s3pop` in the image)). | `/etc/s3pop/server-config.json` |
 
 #### Docker Run Examples
 
 **Standard AWS S3**
 ```bash
-docker run -d --rm --name s3pop-server -p 5110:5110 \
+docker run -d --rm --name s3pop-server -p 127.0.0.1:5110:5110 \
+  -v "$PWD/aws-config:/home/s3pop/.aws/config:ro" \
+  -v "$PWD/s3pop-state:/home/s3pop/.email" \
   -e S3POP_S3_BUCKET="my-email-bucket" \
   -e AWS_ACCESS_KEY_ID="your_access_key" \
   -e AWS_SECRET_ACCESS_KEY="your_secret_key" \
@@ -78,7 +73,9 @@ docker run -d --rm --name s3pop-server -p 5110:5110 \
 
 **Cloudflare R2**
 ```bash
-docker run -d --rm --name s3pop-server -p 5110:5110 \
+docker run -d --rm --name s3pop-server -p 127.0.0.1:5110:5110 \
+  -v "$PWD/aws-config:/home/s3pop/.aws/config:ro" \
+  -v "$PWD/s3pop-state:/home/s3pop/.email" \
   -e S3POP_S3_BUCKET="my-email-bucket" \
   -e S3POP_S3_ENDPOINT="https://<ACCOUNT_ID>.r2.cloudflarestorage.com" \
   -e S3POP_S3_FORCE_PATH_STYLE="true" \
@@ -94,7 +91,9 @@ docker run -d --rm --name s3pop-server -p 5110:5110 \
 
 **Standard AWS S3**
 ```bash
-docker run -d --rm --name s3pop-server -p 5110:5110 \
+docker run -d --rm --name s3pop-server -p 127.0.0.1:5110:5110 \
+  -v "$PWD/aws-config:/home/s3pop/.aws/config:ro" \
+  -v "$PWD/s3pop-state:/home/s3pop/.email" \
   -e S3POP_S3_BUCKET="my-email-bucket" \
   -e AWS_REGION="us-east-1" \
   -e AWS_SHARED_CREDENTIALS_FILE="/run/secrets/aws_credentials" \
@@ -104,7 +103,9 @@ docker run -d --rm --name s3pop-server -p 5110:5110 \
 
 **Cloudflare R2**
 ```bash
-docker run -d --rm --name s3pop-server -p 5110:5110 \
+docker run -d --rm --name s3pop-server -p 127.0.0.1:5110:5110 \
+  -v "$PWD/aws-config:/home/s3pop/.aws/config:ro" \
+  -v "$PWD/s3pop-state:/home/s3pop/.email" \
   -e S3POP_S3_BUCKET="my-email-bucket" \
   -e S3POP_S3_ENDPOINT="https://<ACCOUNT_ID>.r2.cloudflarestorage.com" \
   -e S3POP_S3_FORCE_PATH_STYLE="true" \
@@ -126,12 +127,14 @@ services:
   s3pop-server:
     image: ghcr.io/arran4/s3pop-server:latest
     ports:
-      - "5110:5110"
+      - "127.0.0.1:5110:5110"
     environment:
       - S3POP_S3_BUCKET=my-email-bucket
       - AWS_REGION=us-east-1
       - AWS_SHARED_CREDENTIALS_FILE=/etc/s3pop/aws_credentials
     volumes:
+      - ./aws-config:/home/s3pop/.aws/config:ro
+      - ./s3pop-state:/home/s3pop/.email
       - ./my_aws_credentials:/etc/s3pop/aws_credentials:ro
 ```
 
@@ -143,7 +146,7 @@ services:
   s3pop-server:
     image: ghcr.io/arran4/s3pop-server:latest
     ports:
-      - "5110:5110"
+      - "127.0.0.1:5110:5110"
     environment:
       - S3POP_S3_BUCKET=my-email-bucket
       - S3POP_S3_ENDPOINT=https://<ACCOUNT_ID>.r2.cloudflarestorage.com
@@ -151,13 +154,15 @@ services:
       - AWS_REGION=auto
       - AWS_SHARED_CREDENTIALS_FILE=/etc/s3pop/aws_credentials
     volumes:
+      - ./aws-config:/home/s3pop/.aws/config:ro
+      - ./s3pop-state:/home/s3pop/.email
       - ./my_r2_credentials:/etc/s3pop/aws_credentials:ro
 ```
 
 
 #### Docker Compose Examples (with Docker Secrets)
 
-Docker compose has native support for secrets which is the most secure way to pass credentials to containers.
+Docker Compose supports mounting credentials as secrets instead of storing them in environment variables. Restrict access to the source files; file-backed Compose secrets do not themselves encrypt those files.
 
 **Standard AWS S3**
 ```yaml
@@ -167,11 +172,14 @@ services:
   s3pop-server:
     image: ghcr.io/arran4/s3pop-server:latest
     ports:
-      - "5110:5110"
+      - "127.0.0.1:5110:5110"
     environment:
       - S3POP_S3_BUCKET=my-email-bucket
       - AWS_REGION=us-east-1
       - AWS_SHARED_CREDENTIALS_FILE=/run/secrets/aws_credentials
+    volumes:
+      - ./aws-config:/home/s3pop/.aws/config:ro
+      - ./s3pop-state:/home/s3pop/.email
     secrets:
       - source: aws_credentials
         target: aws_credentials
@@ -189,13 +197,16 @@ services:
   s3pop-server:
     image: ghcr.io/arran4/s3pop-server:latest
     ports:
-      - "5110:5110"
+      - "127.0.0.1:5110:5110"
     environment:
       - S3POP_S3_BUCKET=my-email-bucket
       - S3POP_S3_ENDPOINT=https://<ACCOUNT_ID>.r2.cloudflarestorage.com
       - S3POP_S3_FORCE_PATH_STYLE=true
       - AWS_REGION=auto
       - AWS_SHARED_CREDENTIALS_FILE=/run/secrets/aws_credentials
+    volumes:
+      - ./aws-config:/home/s3pop/.aws/config:ro
+      - ./s3pop-state:/home/s3pop/.email
     secrets:
       - source: aws_credentials
         target: aws_credentials
@@ -210,7 +221,7 @@ Your client needs to be able to be setup to use separate user names and password
 
 Configure the pop server to have host 127.0.0.1 with the same port as you set in the pop3 config. (If you cant set the port for your client you may need to change the config for the server to match what the client expects, this will usually be port 110).
 
-The username you use to connect to the POP3 server should be the key prefix (folder) you use in your S3 bucket to store email.
+Use the mailbox key prefix without a trailing slash as the POP3 username (for example, `alice@example.com` for objects under `alice@example.com/`). Use a disposable dummy password if your client requires one; it is not validated. See the [storage contract and limitations](docs/receiving-email.md#mailbox-storage-contract) before choosing prefixes.
 
 For SMTP (sending) configuration, please refer to your email provider's documentation.
 
@@ -219,6 +230,6 @@ For SMTP (sending) configuration, please refer to your email provider's document
 
 # Todo in future
 - Enable to run as a service/ daemon
-- Better Docs
+- Improve and integration-test the receiving and storage guide
 - Multiple client support
 - IMAP Support?
