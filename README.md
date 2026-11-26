@@ -18,218 +18,323 @@ If you want someone to set this up for you I am happy to do so for a small fee.
 
 ## Setup
 
-Choose a receiving provider and follow the [complete receiving and storage guide](docs/receiving-email.md), which includes:
+Download a release and copy `server-config.json.example` to `server-config.json`, then configure one of the receiving providers below. S3/R2 holds raw messages; this server only handles POP3 retrieval.
 
-- AWS SES to S3 delivery, DNS and receipt rules, with separate least-privilege IAM examples for the SES writer and POP3 reader.
-- Cloudflare Email Routing to an Email Worker to R2, including an example Worker, R2 binding and read-only API token setup.
-- The mailbox prefix and raw MIME object layout, stable filenames, deduplication, local state and migration requirements.
-- Native AWS and R2 configuration, limitations and a test procedure.
+**Security:** Current versions listen on all interfaces, lack POP3 password verification and TLS, and log command arguments. Restrict native deployments with a firewall and publish container ports on loopback only. Do not supply real passwords or expose the service to untrusted clients. Fixes are tracked in [#32](https://github.com/arran4/fork-s3pop-server/issues/32), [#33](https://github.com/arran4/fork-s3pop-server/issues/33) and [#34](https://github.com/arran4/fork-s3pop-server/issues/34).
 
-**Security:** This server listens on all interfaces, does not validate POP3 passwords or implement TLS, and does not authorize mailbox usernames. It logs POP3 command arguments. Restrict native deployments with a firewall and publish container ports only on loopback. Do not use real passwords, expose this service to untrusted clients or treat mailbox prefixes as an authorization boundary.
+## Mailbox storage contract
 
-Download a release, copy `server-config.json.example` to `server-config.json`, and configure it for your chosen provider using the guide (remove the R2 endpoint and path-style settings for standard AWS S3). Start the server:
+For a bucket named `my-email-bucket`, an example layout is:
 
-```bash
-./s3pop-server -config server-config.json -port 5110
+```text
+my-email-bucket/
+  alice@example.com/
+    7615d78d-029b-44c3-97de-77ae8e0061e3.eml
+    3008a6a2-b3b6-4a73-9a85-a0b2f7f44d20.eml
+  bob@example.com/
+    96994350-039e-4ec8-bf19-2b4f5db4bade.eml
 ```
 
-Use `./s3pop-server --help` for the available command-line arguments. The configuration path and port can be overridden from the command line; environment variables override the applicable JSON fields. The backend also requires the OS account's `~/.aws/config` file to exist, even with environment credentials. Preserve `~/.email` between runs.
+- Set the POP3 username to the mailbox prefix without the trailing slash (e.g. `alice@example.com`). Use a simple safe single directory name, not a path; avoid spaces, control characters, slashes, backslashes, `.` and `..`.
+- Each object must contain the original RFC 5322 message, including all headers, a blank line, and the MIME body with attachments. No JSON envelope, base64 wrapping of the entire message, compression, or separate attachment objects. `.eml` is optional; SES-generated identifiers without extensions work. Content-Type `message/rfc822` is helpful but not required.
+- Use immutable, unique, filesystem-safe basenames (e.g. UUIDs or SES-generated IDs). Do not use a user-supplied Message-ID or Subject as a filename. Avoid names ending in `.json`, the reserved local name `_email_index.txt`, directory marker objects and any unrelated files.
+- The backend passes the username as the exact **string prefix** to ListObjectsV2, with no added slash or delimiter. Thus `alice@example.com` also matches `alice@example.com.other/...`. Choose non-overlapping mailbox prefixes and do not store other objects under matching prefixes. Use the slash-separated layout for writers, but note that it does not enforce isolation in the reader.
+- Subdirectories are not represented in POP3. The backend flattens keys using their basename; equal basenames in different subdirectories collide. Prefer a single level of objects beneath each mailbox. Configurable layouts and full-key identity are tracked in [#38](https://github.com/arran4/fork-s3pop-server/issues/38).
+- Current versions have a one-page listing limit ([#36](https://github.com/arran4/fork-s3pop-server/issues/36)); use a small test mailbox until fixed.
 
-### Docker
-Alternatively, you can use the Docker image. You can pull the latest image with:
-```bash
-docker pull ghcr.io/arran4/s3pop-server:latest
+A minimal valid test email (`test.eml`):
+
+```eml
+From: sender@example.net
+To: alice@example.com
+Subject: S3 POP3 test
+Date: Thu, 26 Nov 2026 12:00:00 +1100
+Message-ID: <test-1@example.net>
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+
+Test message.
 ```
 
-Before using any of the following Docker or Compose examples, create a file named `aws-config` beside your command/Compose file containing `[default]` and `region = us-east-1` (AWS; substitute your region) or `region = auto` (R2). The image runs as the non-root `s3pop` user with home and working directory `/home/s3pop`. The config file must be mounted at `/home/s3pop/.aws/config`, even when credentials and region are provided via environment variables.
+Upload it as `alice@example.com/test-1.eml` using the provider console or CLI with a separate writer credential. Do not upload a folder-marker object. Test using a fresh mailbox/prefix, then connect a POP3 client.
 
-Create a persistent directory named `s3pop-state` for the local spool and index. Ensure it is writable by the container user, and that configuration/credential files are readable by that user but not exposed to other users. Use `docker run --rm --entrypoint id ghcr.io/arran4/s3pop-server:latest` to identify its UID/GID (account for user namespace mappings if applicable). Each independent deployment needs its own state directory. Back it up; removing it can cause previously downloaded remote messages to reappear.
+## Local state and migration
 
-All examples below publish only on loopback because the service lacks authentication and TLS. Prefer the credentials-file examples over placing credentials in environment variables.
+The server downloads matching objects at the POP3 USER command, before PASS. It maintains a persistent local directory under the operating-system account running the process (from `os/user.Current()`, not a configurable cache path):
 
-Configuration can be passed via environment variables instead of (or overriding) the JSON configuration file:
+```text
+~/.email/
+  alice@example.com/
+    _email_index.txt
+    test-1.eml
+    test-1.eml.json
+```
 
-| Environment Variable | Description | Example |
-|---|---|---|
-| `S3POP_PORT` | The port the POP3 server will listen on (default 5110). | `110` |
-| `S3POP_S3_BUCKET` | The name of the S3 bucket to read emails from. | `my-email-bucket` |
-| `S3POP_S3_ENDPOINT` | Custom S3 endpoint URL (e.g. for Cloudflare R2). | `https://account-id.r2.cloudflarestorage.com` |
-| `S3POP_S3_FORCE_PATH_STYLE` | Force path style URLs for S3 operations (`true`/`false`). | `true` |
-| `S3POP_CONFIG` | Path to a custom JSON configuration file (defaults to `./server-config.json` in the working directory (`/home/s3pop` in the image)). | `/etc/s3pop/server-config.json` |
+The index is an append-only newline-delimited list of object basenames previously downloaded. The JSON sidecar records `id`, `name`, `headerSize`, `messageSize`, `totalSize` and `read`. The raw local file retains the original downloaded bytes; the POP3 UIDL returned to clients is the basename, not the numeric ID or RFC Message-ID.
 
-#### Docker Run Examples
+POP3 DELE followed by QUIT removes the local message and its JSON sidecar but retains the index entry and remote object. A subsequent connection does not normally re-download that basename. Changing a remote object in place is not detected. Removing the remote object does not remove an already downloaded local message. Removing local state can cause retained messages to be imported again; keeping the index without the remaining spool can suppress undelivered messages.
 
-**Standard AWS S3**
+Back up and migrate the entire mailbox directory, including the index, with the server stopped. Preserve filenames, case, ownership and permissions. When changing provider, retain the same mailbox prefix and basenames if continuing with the same state. Use separate state directories for independent deployments. Do not switch buckets while reusing unrelated state for the same username. See [#37](https://github.com/arran4/fork-s3pop-server/issues/37) and [#39](https://github.com/arran4/fork-s3pop-server/issues/39) for locking and remote maildrop work.
+
+## AWS S3 with SES email receiving
+
+1. Select an [SES email receiving region](https://docs.aws.amazon.com/general/latest/gr/ses.html), verify your domain in SES, and publish the required inbound MX record (for that region) and domain verification DNS records. Your DNS can be hosted by any provider. For this example use `us-east-1`.
+2. Create a private general-purpose S3 bucket in the same region, with Block Public Access enabled and ordinary S3-managed encryption (SSE-S3). Do not enable SES receipt-action client-side KMS encryption: the POP3 backend expects raw MIME and does not implement that decryption.
+3. Grant the SES service permission to deposit messages as described below. Create and activate a receipt rule set. For each mailbox, configure a recipient condition matching that envelope address and a Deliver to S3 action with bucket `my-email-bucket` and object key prefix `alice@example.com/` (include the slash). SES appends its own message identifier. Repeat for other recipients with distinct prefixes; a domain-wide rule with a single fixed prefix creates a shared inbox, not separate mailboxes. Review rule ordering and behavior for messages with multiple recipients.
+4. Create a separate runtime IAM principal with only the read permissions below. Prefer an execution role with short-lived credentials when supported by your environment, otherwise use a dedicated IAM user's access keys, not root or administrator credentials.
+5. Configure and start the POP3 server as described below.
+
+### SES delivery permission (S3 bucket policy)
+
+Example for classic SES receipt rules in the same account and region. Replace the bucket, region, account ID, rule set, and receipt rule name. Merge the statement into an existing bucket policy rather than replacing unrelated statements. Repeat with the correct resource and source ARN for additional rules.
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "AllowSesAliceDelivery",
+      "Effect": "Allow",
+      "Principal": {"Service": "ses.amazonaws.com"},
+      "Action": "s3:PutObject",
+      "Resource": "arn:aws:s3:::my-email-bucket/alice@example.com/*",
+      "Condition": {
+        "StringEquals": {
+          "AWS:SourceAccount": "123456789012",
+          "AWS:SourceArn": "arn:aws:ses:us-east-1:123456789012:receipt-rule-set/mail-rules:receipt-rule/alice"
+        }
+      }
+    }
+  ]
+}
+```
+
+If SES validates the S3 action with a test object or requires permissions outside the chosen prefix, check the actual object key/CloudTrail and adjust the policy narrowly as necessary; do not broaden the reader policy. Other arrangements (cross-account buckets, different regions, IAM role-based delivery or KMS) may need additional permissions. See [SES receiving permissions](https://docs.aws.amazon.com/ses/latest/dg/receiving-email-permissions.html) and [Deliver to S3 bucket](https://docs.aws.amazon.com/ses/latest/dg/receiving-email-action-s3.html).
+
+### POP3 reader IAM policy
+
+Attach this identity policy to the dedicated reader role or user. This example allows listing exactly the prefixes actually passed by this implementation and reading only message objects beneath the intended mailbox directories. A non-overlapping naming convention is still necessary; a prefix-only list condition does not filter individual matching keys.
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "ListMailboxes",
+      "Effect": "Allow",
+      "Action": "s3:ListBucket",
+      "Resource": "arn:aws:s3:::my-email-bucket",
+      "Condition": {
+        "StringEquals": {
+          "s3:prefix": ["alice@example.com", "bob@example.com"]
+        }
+      }
+    },
+    {
+      "Sid": "ReadMessages",
+      "Effect": "Allow",
+      "Action": "s3:GetObject",
+      "Resource": [
+        "arn:aws:s3:::my-email-bucket/alice@example.com/*",
+        "arn:aws:s3:::my-email-bucket/bob@example.com/*"
+      ]
+    }
+  ]
+}
+```
+
+For one server per bucket, a simpler bucket-scoped policy can omit the ListBucket condition and use `arn:aws:s3:::my-email-bucket/*` for GetObject. Neither PutObject nor DeleteObject is needed by the reader. HeadObject, if used by the SDK, is covered by GetObject. SSE-KMS storage may require additional KMS permissions; use SSE-S3 for this example. See [S3 IAM examples](https://docs.aws.amazon.com/AmazonS3/latest/userguide/example-policies-s3.html).
+
+## Cloudflare Email Routing with R2
+
+Cloudflare Email Routing can hand an incoming message to an Email Worker. R2 alone does not accept incoming SMTP and routing does not automatically deposit raw emails in R2. The following is a minimal single-domain example; no outbound Email Sending subscription is required for this routing design. R2 and Workers usage limits and billing still apply.
+
+1. Add your domain to Cloudflare and enable Email Routing, following its DNS instructions. Review existing MX records before changing a domain's delivery provider.
+2. Create a private R2 bucket `my-email-bucket`. Leave public access disabled.
+3. Create a Worker with an email handler, and add an R2 bucket binding named `MAIL_BUCKET` pointing to that bucket (Dashboard: Worker settings/bindings, or Wrangler configuration below).
+4. Deploy the Worker. In Email Routing, configure explicit custom address rules for `alice@example.com` and `bob@example.com` to send to this Worker. Do not enable catch-all unless you intentionally handle it.
+5. In the R2 API token management page, create a token with **Object Read only**, scoped to this bucket. Copy the generated S3 Access Key ID, Secret Access Key and account endpoint. These are not a general Cloudflare API bearer token. The Worker writes through its R2 binding and does not need those credentials. The reader credential is bucket-scoped; keep each deployment accessible only to trusted clients.
+6. Configure the POP3 server with the R2 endpoint, path style and region `auto` as described below.
+
+### Example Worker (index.js)
+
+Explicitly map accepted envelope recipients to safe fixed prefixes. Do not use the MIME To header, since it can differ from the delivered recipient (e.g. Bcc). Add aliases to the map deliberately if they should feed the same mailbox.
+
+```javascript
+const mailboxes = new Map([
+  ["alice@example.com", "alice@example.com"],
+  ["bob@example.com", "bob@example.com"],
+]);
+
+export default {
+  async email(message, env) {
+    const mailbox = mailboxes.get(message.to);
+    if (!mailbox) {
+      message.setReject("Unknown mailbox");
+      return;
+    }
+
+    const key = mailbox + "/" + crypto.randomUUID() + ".eml";
+    // Preserve the MIME bytes. Buffering also gives R2 a known body length.
+    const raw = await new Response(message.raw).arrayBuffer();
+    await env.MAIL_BUCKET.put(key, raw, {
+      httpMetadata: { contentType: "message/rfc822" },
+    });
+  },
+};
+```
+
+Example `wrangler.toml` (or configure the equivalent binding in the dashboard):
+
+```toml
+name = "mail-to-r2"
+main = "index.js"
+compatibility_date = "2026-11-26"
+
+[[r2_buckets]]
+binding = "MAIL_BUCKET"
+bucket_name = "my-email-bucket"
+```
+
+For Wrangler deployment, authenticate and run `npx wrangler deploy` from the directory containing these two files, then configure the email routes. This is a minimal example, not a production queue: it buffers the whole message in memory, uses one UUID per delivery invocation (retries may create duplicate objects), and awaits the write without swallowing errors. Test message sizes within Worker limits and confirm delivery failure behavior for your deployment before relying on it. For large messages, consider known-length streaming or a durable ingestion design. The example does not forward mail; use a separate test address before switching existing routes.
+
+See [Email Routing setup](https://developers.cloudflare.com/email-service/get-started/route-emails/), [email handler API](https://developers.cloudflare.com/email-service/api/route-emails/email-handler/), [R2 binding API](https://developers.cloudflare.com/r2/api/workers/workers-api-reference/) and [R2 token setup](https://developers.cloudflare.com/r2/api/tokens/).
+
+## POP3 server configuration
+
+On the machine running the server, create an AWS SDK config file at the OS account's home directory `~/.aws/config` (required by the current backend even with environment-only credentials; see [#35](https://github.com/arran4/fork-s3pop-server/issues/35)). For AWS use:
+
+```ini
+[default]
+region = us-east-1
+```
+
+For R2 use:
+
+```ini
+[default]
+region = auto
+```
+
+If using static credentials, put them in `~/.aws/credentials` or a file selected by `AWS_SHARED_CREDENTIALS_FILE`. The file format is identical for AWS and R2:
+
+```ini
+[default]
+aws_access_key_id = REPLACE_WITH_ACCESS_KEY_ID
+aws_secret_access_key = REPLACE_WITH_SECRET_ACCESS_KEY
+```
+
+Restrict access to both files; never commit real credentials. For temporary AWS credentials include `aws_session_token` when required, or use the SDK's normal role credential provider.
+
+AWS `server-config.json`:
+
+```json
+{
+  "port": 5110,
+  "s3Bucket": "my-email-bucket"
+}
+```
+
+Cloudflare R2 `server-config.json`:
+
+```json
+{
+  "port": 5110,
+  "s3Bucket": "my-email-bucket",
+  "s3Endpoint": "https://ACCOUNT_ID.r2.cloudflarestorage.com",
+  "s3ForcePathStyle": true
+}
+```
+
+Use the actual S3 endpoint supplied by R2, including any jurisdiction-specific endpoint where applicable. Do not append a bucket name or use an R2 public URL. Ensure no stale AWS endpoint/credential environment variables override the desired configuration.
+
+Start `./s3pop-server -config server-config.json`. Restrict the listening port before starting a native deployment. For containers see [Docker](#docker) and persist the state directory.
+
+## Docker
+
+The image runs as the non-root `s3pop` user with home and working directory `/home/s3pop`. Create `aws-config` and `storage-credentials` files using the INI examples in [POP3 server configuration](#pop3-server-configuration), plus a writable `s3pop-state` directory for the spool and index. Restrict credential access to the container user and ensure that user owns or can write the state directory. Check UID/GID with `docker run --rm --entrypoint id ghcr.io/arran4/s3pop-server:latest`; account for user namespace mappings if applicable.
+
+Publish on loopback only. The current release does not authenticate POP3 users or encrypt connections.
+
+### Docker run
+
+AWS:
+
 ```bash
-docker run -d --rm --name s3pop-server -p 127.0.0.1:5110:5110 \
+docker run -d --name s3pop-server -p 127.0.0.1:5110:5110 \
   -v "$PWD/aws-config:/home/s3pop/.aws/config:ro" \
+  -v "$PWD/storage-credentials:/run/secrets/storage_credentials:ro" \
   -v "$PWD/s3pop-state:/home/s3pop/.email" \
-  -e S3POP_S3_BUCKET="my-email-bucket" \
-  -e AWS_ACCESS_KEY_ID="your_access_key" \
-  -e AWS_SECRET_ACCESS_KEY="your_secret_key" \
-  -e AWS_REGION="us-east-1" \
+  -e S3POP_S3_BUCKET=my-email-bucket \
+  -e AWS_REGION=us-east-1 \
+  -e AWS_SHARED_CREDENTIALS_FILE=/run/secrets/storage_credentials \
   ghcr.io/arran4/s3pop-server:latest
 ```
 
-**Cloudflare R2**
+For R2, use the R2 credentials and `region = auto` in `aws-config`, change `AWS_REGION` to `auto`, and add these options before the image name:
+
 ```bash
-docker run -d --rm --name s3pop-server -p 127.0.0.1:5110:5110 \
-  -v "$PWD/aws-config:/home/s3pop/.aws/config:ro" \
-  -v "$PWD/s3pop-state:/home/s3pop/.email" \
-  -e S3POP_S3_BUCKET="my-email-bucket" \
-  -e S3POP_S3_ENDPOINT="https://<ACCOUNT_ID>.r2.cloudflarestorage.com" \
-  -e S3POP_S3_FORCE_PATH_STYLE="true" \
-  -e AWS_ACCESS_KEY_ID="your_r2_access_key" \
-  -e AWS_SECRET_ACCESS_KEY="your_r2_secret_key" \
-  -e AWS_REGION="auto" \
-  ghcr.io/arran4/s3pop-server:latest
+-e S3POP_S3_ENDPOINT=https://ACCOUNT_ID.r2.cloudflarestorage.com \
+-e S3POP_S3_FORCE_PATH_STYLE=true
 ```
 
+### Docker Compose
 
-
-#### Docker Run Examples (with Docker Secrets / Mounts)
-
-**Standard AWS S3**
-```bash
-docker run -d --rm --name s3pop-server -p 127.0.0.1:5110:5110 \
-  -v "$PWD/aws-config:/home/s3pop/.aws/config:ro" \
-  -v "$PWD/s3pop-state:/home/s3pop/.email" \
-  -e S3POP_S3_BUCKET="my-email-bucket" \
-  -e AWS_REGION="us-east-1" \
-  -e AWS_SHARED_CREDENTIALS_FILE="/run/secrets/aws_credentials" \
-  -v ./my_aws_credentials:/run/secrets/aws_credentials:ro \
-  ghcr.io/arran4/s3pop-server:latest
-```
-
-**Cloudflare R2**
-```bash
-docker run -d --rm --name s3pop-server -p 127.0.0.1:5110:5110 \
-  -v "$PWD/aws-config:/home/s3pop/.aws/config:ro" \
-  -v "$PWD/s3pop-state:/home/s3pop/.email" \
-  -e S3POP_S3_BUCKET="my-email-bucket" \
-  -e S3POP_S3_ENDPOINT="https://<ACCOUNT_ID>.r2.cloudflarestorage.com" \
-  -e S3POP_S3_FORCE_PATH_STYLE="true" \
-  -e AWS_REGION="auto" \
-  -e AWS_SHARED_CREDENTIALS_FILE="/run/secrets/aws_credentials" \
-  -v ./my_r2_credentials:/run/secrets/aws_credentials:ro \
-  ghcr.io/arran4/s3pop-server:latest
-```
-
-#### Docker Compose Examples (with Credentials File)
-
-The AWS SDK for Go v2 supports the standard `AWS_SHARED_CREDENTIALS_FILE` environment variable ([see AWS SDK Docs](https://aws.github.io/aws-sdk-go-v2/docs/configuring-sdk/#environment-variables)). You can use this to securely mount and pass your AWS credentials without exposing them directly in your compose file.
-
-**Standard AWS S3**
 ```yaml
-version: '3.8'
-
 services:
   s3pop-server:
     image: ghcr.io/arran4/s3pop-server:latest
     ports:
       - "127.0.0.1:5110:5110"
     environment:
-      - S3POP_S3_BUCKET=my-email-bucket
-      - AWS_REGION=us-east-1
-      - AWS_SHARED_CREDENTIALS_FILE=/etc/s3pop/aws_credentials
-    volumes:
-      - ./aws-config:/home/s3pop/.aws/config:ro
-      - ./s3pop-state:/home/s3pop/.email
-      - ./my_aws_credentials:/etc/s3pop/aws_credentials:ro
-```
-
-**Cloudflare R2**
-```yaml
-version: '3.8'
-
-services:
-  s3pop-server:
-    image: ghcr.io/arran4/s3pop-server:latest
-    ports:
-      - "127.0.0.1:5110:5110"
-    environment:
-      - S3POP_S3_BUCKET=my-email-bucket
-      - S3POP_S3_ENDPOINT=https://<ACCOUNT_ID>.r2.cloudflarestorage.com
-      - S3POP_S3_FORCE_PATH_STYLE=true
-      - AWS_REGION=auto
-      - AWS_SHARED_CREDENTIALS_FILE=/etc/s3pop/aws_credentials
-    volumes:
-      - ./aws-config:/home/s3pop/.aws/config:ro
-      - ./s3pop-state:/home/s3pop/.email
-      - ./my_r2_credentials:/etc/s3pop/aws_credentials:ro
-```
-
-
-#### Docker Compose Examples (with Docker Secrets)
-
-Docker Compose supports mounting credentials as secrets instead of storing them in environment variables. Restrict access to the source files; file-backed Compose secrets do not themselves encrypt those files.
-
-**Standard AWS S3**
-```yaml
-version: '3.8'
-
-services:
-  s3pop-server:
-    image: ghcr.io/arran4/s3pop-server:latest
-    ports:
-      - "127.0.0.1:5110:5110"
-    environment:
-      - S3POP_S3_BUCKET=my-email-bucket
-      - AWS_REGION=us-east-1
-      - AWS_SHARED_CREDENTIALS_FILE=/run/secrets/aws_credentials
+      S3POP_S3_BUCKET: my-email-bucket
+      AWS_REGION: us-east-1
+      AWS_SHARED_CREDENTIALS_FILE: /run/secrets/storage_credentials
+      # For R2, set AWS_REGION to auto and uncomment:
+      # S3POP_S3_ENDPOINT: https://ACCOUNT_ID.r2.cloudflarestorage.com
+      # S3POP_S3_FORCE_PATH_STYLE: "true"
     volumes:
       - ./aws-config:/home/s3pop/.aws/config:ro
       - ./s3pop-state:/home/s3pop/.email
     secrets:
-      - source: aws_credentials
-        target: aws_credentials
-
+      - storage_credentials
 secrets:
-  aws_credentials:
-    file: ./my_aws_credentials
+  storage_credentials:
+    file: ./storage-credentials
 ```
 
-**Cloudflare R2**
-```yaml
-version: '3.8'
+Run `docker compose up -d`. Compose file-backed secrets do not encrypt the source file; protect it locally. If environment credentials are preferred, the SDK also accepts `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` and, when necessary, `AWS_SESSION_TOKEN`, but the current application still requires the config file.
 
-services:
-  s3pop-server:
-    image: ghcr.io/arran4/s3pop-server:latest
-    ports:
-      - "127.0.0.1:5110:5110"
-    environment:
-      - S3POP_S3_BUCKET=my-email-bucket
-      - S3POP_S3_ENDPOINT=https://<ACCOUNT_ID>.r2.cloudflarestorage.com
-      - S3POP_S3_FORCE_PATH_STYLE=true
-      - AWS_REGION=auto
-      - AWS_SHARED_CREDENTIALS_FILE=/run/secrets/aws_credentials
-    volumes:
-      - ./aws-config:/home/s3pop/.aws/config:ro
-      - ./s3pop-state:/home/s3pop/.email
-    secrets:
-      - source: aws_credentials
-        target: aws_credentials
+### Configuration reference
 
-secrets:
-  aws_credentials:
-    file: ./my_r2_credentials
-```
+| Environment variable | Purpose |
+|---|---|
+| `S3POP_PORT` | POP3 port, default 5110 |
+| `S3POP_S3_BUCKET` | Mail bucket (required) |
+| `S3POP_S3_ENDPOINT` | Optional S3-compatible endpoint |
+| `S3POP_S3_FORCE_PATH_STYLE` | Optional boolean for path-style requests |
+| `S3POP_CONFIG` | Config file path; default `./server-config.json` in working directory |
+| `S3POP_SHUTDOWN_TIMEOUT` | Graceful shutdown timeout in seconds, default 30 |
 
-### Client Configuration
-Your client needs to be able to be setup to use separate user names and password for both the POP3 connection and the SMTP server, the app has been tested with Thunderbird and the Windows 10 mail client. 
+The `-config` and `-port` flags take precedence over the corresponding environment variables, which override JSON settings. Run `./s3pop-server --help` for command-line options.
 
-Configure the pop server to have host 127.0.0.1 with the same port as you set in the pop3 config. (If you cant set the port for your client you may need to change the config for the server to match what the client expects, this will usually be port 110).
+## Client configuration
 
-Use the mailbox key prefix without a trailing slash as the POP3 username (for example, `alice@example.com` for objects under `alice@example.com/`). Use a disposable dummy password if your client requires one; it is not validated. See the [storage contract and limitations](docs/receiving-email.md#mailbox-storage-contract) before choosing prefixes.
+Set incoming protocol POP3, host `127.0.0.1`, port 5110, username matching the mailbox prefix without a trailing slash (e.g. `alice@example.com`), and a disposable dummy password if required. Use plain POP3 only over a trusted local connection. Sending uses your chosen SMTP provider independently.
 
-For SMTP (sending) configuration, please refer to your email provider's documentation.
+## Verify delivery and retrieval
 
+1. Send a test message to the configured recipient (preferably including an attachment). Confirm a raw object exists under the exact mailbox prefix.
+2. With the reader credentials and correct region, check listing and retrieval. For AWS, omit the endpoint option; for R2 set it to the account endpoint:
 
+   ```sh
+   aws --endpoint-url https://ACCOUNT_ID.r2.cloudflarestorage.com s3api list-objects-v2 \
+     --bucket my-email-bucket --prefix alice@example.com --region auto
+   ```
 
+   Download a listed object with `aws s3api get-object --bucket my-email-bucket --key 'alice@example.com/ACTUAL_OBJECT_KEY' downloaded.eml` plus the same region and, for R2, endpoint option. Keep any downloaded mail private.
+3. Configure a POP3 client for host `127.0.0.1`, port 5110, username `alice@example.com`, no TLS on the local trusted connection and a disposable dummy password if required.
+4. Check that headers, body and attachment arrive. Reconnect, confirm the UIDL remains stable, and test local deletion with a disposable message. Verify the remote object remains intact. Restart the server with the same persistent local state and verify a deleted message does not reappear.
+5. If no messages arrive, check the prefix, region, credentials, mandatory AWS config file, state index, listing page limit and server logs. Avoid logging/sharing sensitive email contents.
 
-# Todo in future
-- Enable to run as a service/ daemon
-- Improve and integration-test the receiving and storage guide
-- Multiple client support
-- IMAP Support?
+Sending mail is a separate concern; configure an SMTP provider independently.
